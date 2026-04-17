@@ -1,0 +1,75 @@
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+.vercel/
+
+# env files (keep examples, ignore actuals)
+apps/web/.env
+apps/web/.env.local
+apps/web/.env.*.local
+
+# Next.js cache
+.next/cache/
+
+# ── Python / FastAPI ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.Python
+
+# virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# env files
+apps/api/.env
+
+# packaging / build
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+*.whl
+
+# ruff / mypy caches
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Database ──────────────────────────────────────────────────────────────────
+*.sql.dump
+*.sqlite3
+*.db
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.log
+*.pid
+coverage/
+.nyc_output/
