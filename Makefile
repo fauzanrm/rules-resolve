@@ -2,7 +2,7 @@
         web api dev \
         lint lint-web lint-api \
         format format-api \
-        test test-api
+        test test-web test-api
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -46,7 +46,10 @@ format-api:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-test: test-api
+test: test-web test-api
+
+test-web:
+	cd apps/web && npm test
 
 test-api:
 	cd apps/api && .venv/bin/pytest
