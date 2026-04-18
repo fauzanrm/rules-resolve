@@ -267,3 +267,161 @@ body {
   color: #b91c1c;
   border: 1px solid #fecaca;
 }
+
+/* ── Admin layout ─────────────────────────────────────────────────────────── */
+
+.admin-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-main {
+  flex: 1;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+/* ── Navbar ───────────────────────────────────────────────────────────────── */
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  height: 56px;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.navbar-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111;
+}
+
+.admin-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #f0f0f0;
+  color: #555;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #ddd;
+}
+
+.logout-btn {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #444;
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.logout-btn:hover {
+  background: #f5f5f5;
+  border-color: #aaa;
+}
+
+/* ── Hero section ─────────────────────────────────────────────────────────── */
+
+.hero-section {
+  padding: 3rem 0 2.5rem;
+  border-bottom: 1px solid #e8e8e8;
+  margin-bottom: 2.5rem;
+}
+
+.hero-section h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #111;
+  margin-bottom: 0.75rem;
+}
+
+.hero-section p {
+  font-size: 1rem;
+  color: #555;
+  line-height: 1.6;
+  max-width: 560px;
+}
+
+/* ── Chatroom list ────────────────────────────────────────────────────────── */
+
+.chatroom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+
+.chatroom-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  pointer-events: none;
+  cursor: default;
+}
+
+.card-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+
+.card-fallback {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #ebebeb;
+}
+
+.card-info {
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.card-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-status {
+  font-size: 0.75rem;
+  color: #999;
+}
+
+/* ── Empty / error states ─────────────────────────────────────────────────── */
+
+.empty-state,
+.fetch-error {
+  font-size: 0.9rem;
+  color: #777;
+  padding: 1.5rem 0;
+}
+
+.fetch-error {
+  color: #b91c1c;
+}
