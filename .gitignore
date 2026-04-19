@@ -73,3 +73,5 @@ Thumbs.db
 *.pid
 coverage/
 .nyc_output/
+_plans/
+apps/web/package-lock.json
