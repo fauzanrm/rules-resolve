@@ -22,6 +22,21 @@ export async function get<T>(path: string): Promise<T> {
   return data as T;
 }
 
+export async function postForm<T>(path: string, formData: FormData): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new ApiError(res.status, (data as { detail?: string }).detail ?? "Request failed");
+  }
+
+  return data as T;
+}
+
 export async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",

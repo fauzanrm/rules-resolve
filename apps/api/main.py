@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.auth import router as auth_router
 from routers.chatrooms import router as chatrooms_router
+from routers.config import router as config_router
 
 app = FastAPI()
 
@@ -23,3 +24,4 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/auth")
 app.include_router(chatrooms_router, prefix="/chatrooms")
+app.include_router(config_router, prefix="/config")

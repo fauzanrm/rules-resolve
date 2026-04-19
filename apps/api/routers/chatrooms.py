@@ -1,36 +1,22 @@
-import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from supabase import create_client
 
 from db import get_connection
+from storage import BUCKET, get_supabase, get_signed_url
 
 router = APIRouter()
 
-BUCKET = "chatroom-assets"
-
-
-def _get_supabase():
-    url = os.environ.get("SUPABASE_URL", "")
-    key = os.environ.get("SUPABASE_SERVICE_KEY", "")
-    if not url or not key:
-        return None
-    return create_client(url, key)
-
 
 def _resolve_cover_url(supabase, chatroom_id: int, document_id: int) -> Optional[str]:
+    prefix = f"{chatroom_id}/documents/{document_id}/source"
     try:
-        prefix = f"{chatroom_id}/documents/{document_id}/source"
         files = supabase.storage.from_(BUCKET).list(prefix, {"limit": 100, "offset": 0, "sortBy": {"column": "name", "order": "asc"}})
         webp = next((f for f in files if f["name"].endswith(".webp")), None)
         if not webp:
             return None
-        result = supabase.storage.from_(BUCKET).create_signed_url(
-            f"{prefix}/{webp['name']}", expires_in=31536000
-        )
-        return result.get("signedURL")
+        return get_signed_url(supabase, f"{prefix}/{webp['name']}")
     except Exception:
         return None
 
@@ -59,7 +45,7 @@ def list_chatrooms():
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to fetch chatrooms")
 
-    supabase = _get_supabase()
+    supabase = get_supabase()
 
     result = []
     for chatroom_id, name, first_document_id in rows:

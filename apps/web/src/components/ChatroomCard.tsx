@@ -1,11 +1,18 @@
+import Link from "next/link";
+
 interface ChatroomCardProps {
+  chatroomId: number;
   name: string;
   coverImageUrl?: string | null;
 }
 
-export default function ChatroomCard({ name, coverImageUrl = null }: ChatroomCardProps) {
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, "-");
+}
+
+export default function ChatroomCard({ chatroomId: _chatroomId, name, coverImageUrl = null }: ChatroomCardProps) {
   return (
-    <div className="chatroom-card">
+    <Link href={`/admin/${slugify(name)}`} className="chatroom-card">
       {coverImageUrl ? (
         <img className="card-image" src={coverImageUrl} alt={name} />
       ) : (
@@ -13,8 +20,7 @@ export default function ChatroomCard({ name, coverImageUrl = null }: ChatroomCar
       )}
       <div className="card-info">
         <span className="card-name">{name}</span>
-        <span className="card-status">Under construction</span>
       </div>
-    </div>
+    </Link>
   );
 }

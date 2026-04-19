@@ -91,6 +91,27 @@ make test-web   # frontend only
 make test-api   # backend only
 ```
 
+## Supabase Storage Conventions
+
+PDFs and derived assets are stored in the `chatroom-assets` bucket using this path structure:
+
+```
+{chatroomId}/documents/{documentId}/source/{filename.pdf}
+{chatroomId}/documents/{documentId}/assets/cover.webp
+```
+
+### Manually seeding PDFs via Supabase
+
+When inserting a document row directly in Supabase (instead of committing via the UI), ensure:
+
+1. Upload the PDF to `{chatroomId}/documents/{documentId}/source/{filename.pdf}` in the `chatroom-assets` bucket
+2. Insert a row into `documents` with `file_name` set to the **exact filename** used in storage (e.g. `monopoly-rules.pdf`)
+3. Insert a row into `chatroom_documents` linking the `chatroom_id` and `document_id`
+
+The config page derives the signed URL from `file_name` in the DB — if they don't match, the PDF will not load.
+
+When a PDF is committed via the UI, the existing file is deleted from storage and replaced with the new upload under the new filename.
+
 ## Specs
 
 Feature specs live in `_specs/features/`. Architecture specs live in `_specs/architecture/`.

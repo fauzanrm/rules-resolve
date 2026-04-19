@@ -58,6 +58,8 @@ test("clicking logout clears session and redirects to /login", async () => {
 
   expect(authLib.clearSession).toHaveBeenCalled();
   expect(mockPush).toHaveBeenCalledWith("/login");
+
+  await waitFor(() => expect(apiLib.get).toHaveBeenCalled());
 });
 
 // 3. Chatroom fetch — cards rendered with correct names
@@ -104,10 +106,12 @@ test("chatroom cards are present but not interactive", async () => {
 });
 
 // 6. Partial visibility — chatroom section present in document on initial render
-test("chatroom section is present in the document on initial render", () => {
+test("chatroom section is present in the document on initial render", async () => {
   render(<AdminPage />);
 
   expect(document.querySelector(".chatroom-section")).toBeInTheDocument();
+
+  await waitFor(() => expect(apiLib.get).toHaveBeenCalled());
 });
 
 // 7. Error state

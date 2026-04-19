@@ -53,7 +53,7 @@ export default function AdminPage() {
           ) : (
             <div className="chatroom-grid">
               {chatrooms.map((c) => (
-                <ChatroomCard key={c.id} name={c.name} coverImageUrl={c.cover_image_url} />
+                <ChatroomCard key={c.id} chatroomId={c.id} name={c.name} coverImageUrl={c.cover_image_url} />
               ))}
             </div>
           )}
