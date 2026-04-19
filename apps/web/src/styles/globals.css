@@ -305,6 +305,12 @@ body {
   gap: 0.5rem;
 }
 
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .navbar-title {
   font-size: 1rem;
   font-weight: 600;
@@ -542,6 +548,71 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+}
+
+/* ── Chatroom title in navbar (inline rename) ───────────────────────────── */
+
+.navbar-context {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid #d0d0d0;
+  min-width: 0;
+}
+
+.config-chatroom-title {
+  display: inline-block;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #222;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: text;
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.config-chatroom-title:hover,
+.config-chatroom-title:focus {
+  border-color: #c5c5c5;
+  background: #fafafa;
+  outline: none;
+}
+
+.config-chatroom-title-editing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.config-chatroom-titleInput {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #222;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #888;
+  border-radius: 4px;
+  background: #fff;
+  width: 260px;
+  max-width: 40vw;
+  font-family: inherit;
+}
+
+.config-chatroom-titleInput:focus {
+  outline: none;
+  border-color: #1d4ed8;
+}
+
+.config-chatroom-titleError {
+  font-size: 0.8125rem;
+  color: #b91c1c;
+  white-space: nowrap;
 }
 
 /* ── Stage panel (left) ───────────────────────────────────────────────────── */

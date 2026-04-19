@@ -1,13 +1,15 @@
 "use client";
 
+import { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { clearSession } from "@/lib/auth";
 
 interface NavbarProps {
   onBack?: () => void;
+  titleSlot?: ReactNode;
 }
 
-export default function Navbar({ onBack }: NavbarProps = {}) {
+export default function Navbar({ onBack, titleSlot }: NavbarProps = {}) {
   const router = useRouter();
 
   function handleLogout() {
@@ -25,12 +27,15 @@ export default function Navbar({ onBack }: NavbarProps = {}) {
         )}
         <div className="navbar-brand">
           <span className="navbar-title">RuleResolve</span>
-          <span className="admin-badge">Admin</span>
         </div>
+        {titleSlot && <div className="navbar-context">{titleSlot}</div>}
       </div>
-      <button className="logout-btn" onClick={handleLogout}>
-        Log out
-      </button>
+      <div className="navbar-right">
+        <span className="admin-badge">Admin</span>
+        <button className="logout-btn" onClick={handleLogout}>
+          Log out
+        </button>
+      </div>
     </nav>
   );
 }

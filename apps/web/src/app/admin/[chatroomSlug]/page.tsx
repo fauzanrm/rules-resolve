@@ -3,8 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { get, postForm } from "@/lib/api";
+import { get, postForm, patch, ApiError } from "@/lib/api";
 import Navbar from "@/components/Navbar";
+
+const MAX_NAME_LENGTH = 50;
+
+function slugify(name: string): string {
+  return name.toLowerCase().trim().replace(/\s+/g, "-");
+}
 
 interface DocumentMeta {
   id: number;
@@ -56,6 +62,14 @@ export default function ConfigPage() {
   const [showDirtyWarning, setShowDirtyWarning] = useState(false);
   const pendingNavRef = useRef<(() => void) | null>(null);
 
+  const [chatroomId, setChatroomId] = useState<number | null>(null);
+  const [chatroomName, setChatroomName] = useState<string>("");
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
     const session = getSession();
     if (!session) {
@@ -70,6 +84,8 @@ export default function ConfigPage() {
     get<ConfigPageData>(`/config/${chatroomSlug}`)
       .then((data) => {
         setCommittedDoc(data.document);
+        setChatroomId(data.chatroom_id);
+        setChatroomName(data.chatroom_name);
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : "Failed to load config.";
@@ -139,9 +155,119 @@ export default function ConfigPage() {
     }
   }
 
+  function beginEditName() {
+    if (isSavingName) return;
+    setDraftName(chatroomName);
+    setNameError(null);
+    setIsEditingName(true);
+    setTimeout(() => {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    }, 0);
+  }
+
+  function cancelEditName() {
+    setIsEditingName(false);
+    setDraftName(chatroomName);
+    setNameError(null);
+  }
+
+  async function handleSaveName() {
+    if (!chatroomId) return;
+    const trimmed = draftName.trim();
+
+    if (trimmed === chatroomName) {
+      setIsEditingName(false);
+      setNameError(null);
+      return;
+    }
+
+    if (!trimmed) {
+      setNameError("Name cannot be empty");
+      return;
+    }
+    if (trimmed.length > MAX_NAME_LENGTH) {
+      setNameError(`Name must be ${MAX_NAME_LENGTH} characters or fewer`);
+      return;
+    }
+
+    setIsSavingName(true);
+    setNameError(null);
+    try {
+      const updated = await patch<{ id: number; name: string }>(
+        `/chatrooms/${chatroomId}`,
+        { name: trimmed },
+      );
+      setChatroomName(updated.name);
+      setIsEditingName(false);
+      const newSlug = slugify(updated.name);
+      if (newSlug !== chatroomSlug) {
+        router.replace(`/admin/${newSlug}`);
+      }
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setNameError(err.message);
+      } else {
+        setNameError("Failed to rename chatroom");
+      }
+    } finally {
+      setIsSavingName(false);
+    }
+  }
+
+  function handleNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSaveName();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEditName();
+    }
+  }
+
+  const titleSlot = chatroomName ? (
+    isEditingName ? (
+      <span className="config-chatroom-title-editing">
+        <input
+          ref={nameInputRef}
+          className="config-chatroom-titleInput"
+          type="text"
+          maxLength={MAX_NAME_LENGTH}
+          value={draftName}
+          aria-label="Chatroom name"
+          disabled={isSavingName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onBlur={handleSaveName}
+          onKeyDown={handleNameKeyDown}
+        />
+        {nameError && (
+          <span className="config-chatroom-titleError" role="alert">
+            {nameError}
+          </span>
+        )}
+      </span>
+    ) : (
+      <span
+        className="config-chatroom-title"
+        role="button"
+        tabIndex={0}
+        title="Click to rename"
+        onClick={beginEditName}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            beginEditName();
+          }
+        }}
+      >
+        {chatroomName}
+      </span>
+    )
+  ) : null;
+
   return (
     <div className="config-page">
-      <Navbar onBack={handleBack} />
+      <Navbar onBack={handleBack} titleSlot={titleSlot} />
 
       {loadError ? (
         <div className="config-load-error">
