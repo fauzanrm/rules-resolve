@@ -6,3 +6,4 @@ sqlalchemy>=2.0.30
 python-multipart>=0.0.9
 supabase>=2.0.0
 pymupdf>=1.24.0
+Pillow>=10.0.0

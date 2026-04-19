@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { get, postForm } from "@/lib/api";
@@ -23,8 +23,6 @@ export default function AdminPage() {
   const [newFile, setNewFile] = useState<File | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const session = getSession();
@@ -146,7 +144,6 @@ export default function AdminPage() {
                 <label className="file-label" htmlFor="chatroom-pdf">Choose PDF</label>
                 <input
                   id="chatroom-pdf"
-                  ref={fileInputRef}
                   type="file"
                   accept=".pdf"
                   onChange={handleFileChange}

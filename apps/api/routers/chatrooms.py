@@ -7,7 +7,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from db import get_connection
-from storage import get_supabase, get_signed_url, upload_file
+from storage import BUCKET, get_supabase, get_signed_url, upload_file
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
@@ -124,8 +124,8 @@ async def create_chatroom(name: str = Form(...), file: UploadFile = File(...)):
                 )
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to create chatroom")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create chatroom: {e}")
 
     supabase = get_supabase()
     cover_url = None
@@ -133,7 +133,7 @@ async def create_chatroom(name: str = Form(...), file: UploadFile = File(...)):
         source_prefix = f"{chatroom_id}/documents/{doc_id}/source"
         try:
             upload_file(supabase, f"{source_prefix}/{file.filename}", contents, "application/pdf")
-        except Exception:
+        except Exception as e:
             try:
                 with get_connection() as conn:
                     with conn.cursor() as cur:
@@ -142,7 +142,7 @@ async def create_chatroom(name: str = Form(...), file: UploadFile = File(...)):
                         cur.execute("DELETE FROM chatrooms WHERE id = %s", (chatroom_id,))
             except Exception:
                 pass
-            raise HTTPException(status_code=500, detail="Failed to upload PDF to storage")
+            raise HTTPException(status_code=500, detail=f"Failed to upload PDF to storage: {e}")
 
         if cover_bytes:
             try:

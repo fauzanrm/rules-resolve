@@ -787,6 +787,11 @@ input[type="file"] {
   transition: background 0.15s;
 }
 
-.modal-confirm-btn:hover {
+.modal-confirm-btn:hover:not(:disabled) {
   background: #333;
+}
+
+.modal-confirm-btn:disabled {
+  background: #aaa;
+  cursor: not-allowed;
 }
