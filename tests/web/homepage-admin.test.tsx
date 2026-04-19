@@ -45,7 +45,7 @@ test("renders navbar, hero section, and chatroom area", async () => {
   expect(screen.getByText(/Don't know the exact rules/)).toBeInTheDocument();
 
   await waitFor(() => {
-    expect(screen.getByText("Board games in progress...")).toBeInTheDocument();
+    expect(screen.getByText("Add New Chatroom")).toBeInTheDocument();
   });
 });
 
@@ -77,19 +77,19 @@ test("fetched chatrooms are rendered as cards", async () => {
   });
 });
 
-// 4. Empty state
-test("shows empty state when no chatrooms exist", async () => {
+// 4. Add-new card always visible
+test("shows add new chatroom card when no chatrooms exist", async () => {
   (apiLib.get as jest.Mock).mockResolvedValue([]);
 
   render(<AdminPage />);
 
   await waitFor(() => {
-    expect(screen.getByText("Board games in progress...")).toBeInTheDocument();
+    expect(screen.getByText("Add New Chatroom")).toBeInTheDocument();
   });
 });
 
-// 5. Disabled state — cards present but non-interactive
-test("chatroom cards are present but not interactive", async () => {
+// 5. Chatroom cards link to their config page
+test("chatroom cards link to their slug-based config page", async () => {
   (apiLib.get as jest.Mock).mockResolvedValue([{ id: 1, name: "Chess" }]);
 
   render(<AdminPage />);
@@ -100,9 +100,8 @@ test("chatroom cards are present but not interactive", async () => {
 
   const card = screen.getByText("Chess").closest(".chatroom-card");
   expect(card).toBeInTheDocument();
-  expect(card).not.toHaveAttribute("onClick");
-  expect(card).not.toHaveAttribute("role", "button");
-  expect(card).not.toHaveAttribute("tabIndex");
+  expect(card?.tagName.toLowerCase()).toBe("a");
+  expect(card).toHaveAttribute("href", "/admin/chess");
 });
 
 // 6. Partial visibility — chatroom section present in document on initial render
