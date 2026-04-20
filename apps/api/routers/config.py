@@ -5,11 +5,13 @@ import io
 
 import fitz
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel
 
 from db import get_connection
 from storage import BUCKET, get_supabase, get_signed_url, upload_file
+from routers.raw_words import purge_raw_words
 
 router = APIRouter()
 
@@ -185,6 +187,7 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
 
     supabase = get_supabase()
     if supabase:
+        purge_raw_words(supabase, chatroom_id, doc_id)
         if old_file_name and old_file_name != file.filename:
             try:
                 supabase.storage.from_("chatroom-assets").remove(
@@ -221,3 +224,64 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
             )
 
     return _build_document_meta(chatroom_id, doc_row, supabase)
+
+
+@router.get("/{chatroom_slug}/page-image/{page_num}")
+def get_page_image(chatroom_slug: str, page_num: int):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM chatrooms WHERE LOWER(REPLACE(name, ' ', '-')) = LOWER(%s)",
+                    (chatroom_slug,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Chatroom not found")
+                chatroom_id = row[0]
+
+                cur.execute(
+                    """
+                    SELECT d.id, d.file_name FROM documents d
+                    JOIN chatroom_documents cd ON cd.document_id = d.id
+                    WHERE cd.chatroom_id = %s
+                    ORDER BY d.id ASC LIMIT 1
+                    """,
+                    (chatroom_id,),
+                )
+                doc_row = cur.fetchone()
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to resolve chatroom")
+
+    if not doc_row:
+        raise HTTPException(status_code=404, detail="No document for chatroom")
+
+    doc_id, file_name = doc_row
+    supabase = get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Storage not configured")
+
+    try:
+        pdf_bytes = supabase.storage.from_(BUCKET).download(
+            f"{chatroom_id}/documents/{doc_id}/source/{file_name}"
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="PDF not found in storage")
+
+    try:
+        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if page_num < 1 or page_num > len(pdf_doc):
+            raise HTTPException(status_code=400, detail="Invalid page number")
+        page = pdf_doc[page_num - 1]
+        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+        png_bytes = pix.tobytes("png")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to render page: {e}")
+    finally:
+        pdf_doc.close()
+
+    return Response(content=png_bytes, media_type="image/png")

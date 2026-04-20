@@ -866,3 +866,145 @@ input[type="file"] {
   background: #aaa;
   cursor: not-allowed;
 }
+
+/* ── Raw Words stage ─────────────────────────────────────────────────────── */
+
+.stage-chip {
+  cursor: default;
+}
+
+.stage-chip.chip-active {
+  cursor: pointer;
+}
+
+.stage-chip.chip-selected {
+  outline: 2px solid #1d4ed8;
+  outline-offset: -2px;
+}
+
+.stage-chip.chip-generated {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.stage-chip.chip-committed {
+  background: #ecfdf5;
+  border-color: #10b981;
+}
+
+.stage-chip.chip-disabled {
+  opacity: 0.6;
+}
+
+.stage-helper-text {
+  display: block;
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 0.25rem;
+}
+
+.action-status-banner {
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  background: #f3f4f6;
+  font-size: 0.875rem;
+  color: #333;
+  margin: 0.5rem 0;
+}
+
+.raw-words-summary {
+  font-size: 0.875rem;
+  color: #444;
+  margin: 0 0 0.75rem;
+}
+
+.commit-btn-secondary {
+  margin-top: 0.5rem;
+  background: #1d4ed8;
+}
+
+.raw-words-viewer {
+  flex: 1;
+  overflow: auto;
+  background: #f6f6f6;
+  padding: 1rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.raw-words-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+}
+
+.raw-word-page-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.raw-word-page {
+  position: relative;
+  background: #fff;
+  border: 1px solid #ddd;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.raw-word-page-label {
+  font-size: 0.75rem;
+  color: #666;
+  align-self: flex-start;
+}
+
+.raw-word-quad {
+  position: absolute;
+  pointer-events: auto;
+  cursor: crosshair;
+  border: 1px solid transparent;
+}
+
+.raw-word-quad.generated {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.raw-word-quad.committed {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.raw-word-quad:hover {
+  background: rgba(29, 78, 216, 0.3);
+  border-color: rgba(29, 78, 216, 0.8);
+}
+
+.raw-word-hover-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  min-width: 220px;
+}
+
+.raw-word-hover-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.15rem 0;
+}
+
+.raw-word-hover-label {
+  color: #888;
+}
+
+.raw-word-hover-value {
+  color: #222;
+  font-weight: 500;
+}

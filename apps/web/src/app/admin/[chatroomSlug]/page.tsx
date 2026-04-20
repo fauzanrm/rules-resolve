@@ -3,10 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { get, postForm, patch, ApiError } from "@/lib/api";
+import { get, post, postForm, patch, ApiError } from "@/lib/api";
 import Navbar from "@/components/Navbar";
+import RawWordsOverlay from "@/components/config/RawWordsOverlay";
+import RawWordsHoverCard from "@/components/config/RawWordsHoverCard";
+import { RawWord, RawWordsPayload } from "@/components/config/rawWordsTypes";
 
 const MAX_NAME_LENGTH = 50;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function slugify(name: string): string {
   return name.toLowerCase().trim().replace(/\s+/g, "-");
@@ -29,13 +33,23 @@ interface ConfigPageData {
 }
 
 const STAGES = [
-  { key: "pdf_upload", label: "PDF Upload", active: true },
-  { key: "raw_words", label: "Raw Words Detection", active: false },
-  { key: "canonical_words", label: "Canonical Words Selection", active: false },
-  { key: "outline", label: "Outline Generation", active: false },
-  { key: "chunks", label: "Chunk Assignment", active: false },
-  { key: "embeddings", label: "Embeddings Generation", active: false },
-];
+  { key: "pdf_upload", label: "PDF Upload" },
+  { key: "raw_words", label: "Raw Words Detection" },
+  { key: "canonical_words", label: "Canonical Words Selection" },
+  { key: "outline", label: "Outline Generation" },
+  { key: "chunks", label: "Chunk Assignment" },
+  { key: "embeddings", label: "Embeddings Generation" },
+] as const;
+
+type StageKey = (typeof STAGES)[number]["key"];
+
+interface RawWordsState {
+  chatroom_id: number;
+  document_id: number | null;
+  has_source_pdf: boolean;
+  raw_words: RawWordsPayload | null;
+  error?: string | null;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -70,6 +84,22 @@ export default function ConfigPage() {
   const [nameError, setNameError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
+  const [activeStage, setActiveStage] = useState<StageKey>("pdf_upload");
+  const [hasSourcePdf, setHasSourcePdf] = useState(false);
+  const [committedRawWords, setCommittedRawWords] = useState<RawWordsPayload | null>(null);
+  const [generatedRawWords, setGeneratedRawWords] = useState<RawWordsPayload | null>(null);
+  const [rawWordsStatus, setRawWordsStatus] = useState<
+    "idle" | "generating" | "generated" | "committing" | "success" | "error"
+  >("idle");
+  const [rawWordsError, setRawWordsError] = useState<string | null>(null);
+  const [hoveredWord, setHoveredWord] = useState<RawWord | null>(null);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+
+  const hasGeneratedRawWords = generatedRawWords !== null;
+  const hasCommittedRawWords = committedRawWords !== null;
+  const isRawWordsDirty = hasGeneratedRawWords;
+
   useEffect(() => {
     const session = getSession();
     if (!session) {
@@ -86,6 +116,18 @@ export default function ConfigPage() {
         setCommittedDoc(data.document);
         setChatroomId(data.chatroom_id);
         setChatroomName(data.chatroom_name);
+        return get<RawWordsState>(`/raw-words/${data.chatroom_id}`);
+      })
+      .then((rw) => {
+        if (!rw) return;
+        setHasSourcePdf(rw.has_source_pdf);
+        if (rw.raw_words) {
+          setCommittedRawWords(rw.raw_words);
+        }
+        if (rw.error) {
+          setRawWordsError(rw.error);
+          setRawWordsStatus("error");
+        }
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : "Failed to load config.";
@@ -93,17 +135,19 @@ export default function ConfigPage() {
       });
   }, [chatroomSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const anyDirty = isDirty || isRawWordsDirty;
+
   useEffect(() => {
-    if (!isDirty) return;
+    if (!anyDirty) return;
     function handleBeforeUnload(e: BeforeUnloadEvent) {
       e.preventDefault();
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isDirty]);
+  }, [anyDirty]);
 
   function guardedNavigate(navigate: () => void) {
-    if (isDirty) {
+    if (anyDirty) {
       pendingNavRef.current = navigate;
       setShowDirtyWarning(true);
     } else {
@@ -147,6 +191,14 @@ export default function ConfigPage() {
       setCommittedDoc(doc);
       setStagedFile(null);
       setIsDirty(false);
+      // Source PDF changed: any prior raw words are now invalidated
+      setCommittedRawWords(null);
+      setGeneratedRawWords(null);
+      setHoveredWord(null);
+      setHoveredIndex(null);
+      setRawWordsStatus("idle");
+      setRawWordsError(null);
+      setHasSourcePdf(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Commit failed. Please try again.";
       setCommitError(msg);
@@ -215,6 +267,68 @@ export default function ConfigPage() {
     }
   }
 
+  async function handleGenerateRawWords() {
+    if (!chatroomId) return;
+    setRawWordsStatus("generating");
+    setRawWordsError(null);
+    try {
+      const payload = await post<RawWordsPayload>(
+        `/raw-words/${chatroomId}/generate`,
+        {},
+      );
+      setGeneratedRawWords(payload);
+      setRawWordsStatus("generated");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Generation failed";
+      setRawWordsError(msg);
+      setRawWordsStatus("error");
+    }
+  }
+
+  async function handleCommitRawWords() {
+    if (!chatroomId || !generatedRawWords) return;
+    setRawWordsStatus("committing");
+    setRawWordsError(null);
+    try {
+      const committed = await post<RawWordsPayload>(
+        `/raw-words/${chatroomId}/commit`,
+        { payload: generatedRawWords },
+      );
+      setCommittedRawWords(committed);
+      setGeneratedRawWords(null);
+      setRawWordsStatus("success");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Commit failed";
+      setRawWordsError(msg);
+      setRawWordsStatus("error");
+    }
+  }
+
+  function handleRawWordHover(word: RawWord | null, index: number | null) {
+    setHoveredWord(word);
+    setHoveredIndex(index);
+  }
+
+  function handleSelectStage(key: StageKey) {
+    if (key === "pdf_upload") {
+      setActiveStage("pdf_upload");
+      return;
+    }
+    if (key === "raw_words" && (hasSourcePdf || hasCommittedRawWords)) {
+      setActiveStage("raw_words");
+    }
+  }
+
   function handleNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -279,76 +393,195 @@ export default function ConfigPage() {
           <div className="stage-panel">
             <h2 className="panel-heading">Pipeline Stages</h2>
             <ul className="stage-list">
-              {STAGES.map((stage) => (
-                <li
-                  key={stage.key}
-                  className={`stage-chip ${stage.active ? "chip-active" : "chip-disabled"} ${
-                    stage.key === "pdf_upload" && committedDoc ? "chip-committed" : ""
-                  }`}
-                >
-                  <span className="chip-label">{stage.label}</span>
-                  {stage.key === "pdf_upload" && (
-                    <span className="chip-status">
-                      {committedDoc ? "Committed" : "Not committed"}
-                    </span>
-                  )}
-                  {stage.key === "pdf_upload" && committedDoc && (
-                    <span className="chip-meta">
-                      {formatDate(committedDoc.last_updated_at)} &middot;{" "}
-                      {formatBytes(committedDoc.file_size)} &middot;{" "}
-                      {committedDoc.page_count} pages
-                    </span>
-                  )}
-                </li>
-              ))}
+              {STAGES.map((stage) => {
+                const isPdf = stage.key === "pdf_upload";
+                const isRaw = stage.key === "raw_words";
+                const clickable = isPdf || (isRaw && (hasSourcePdf || hasCommittedRawWords));
+                const isActive = stage.key === activeStage;
+                const committedClass =
+                  (isPdf && committedDoc) || (isRaw && hasCommittedRawWords && !hasGeneratedRawWords)
+                    ? "chip-committed"
+                    : "";
+                const generatedClass =
+                  isRaw && hasGeneratedRawWords ? "chip-generated" : "";
+                const disabledClass = clickable ? "chip-active" : "chip-disabled";
+                return (
+                  <li
+                    key={stage.key}
+                    className={`stage-chip ${disabledClass} ${committedClass} ${generatedClass} ${
+                      isActive ? "chip-selected" : ""
+                    }`}
+                    onClick={() => handleSelectStage(stage.key as StageKey)}
+                    role={clickable ? "button" : undefined}
+                    tabIndex={clickable ? 0 : -1}
+                  >
+                    <span className="chip-label">{stage.label}</span>
+                    {isPdf && (
+                      <span className="chip-status">
+                        {committedDoc ? "Committed" : "Not committed"}
+                      </span>
+                    )}
+                    {isPdf && committedDoc && (
+                      <span className="chip-meta">
+                        {formatDate(committedDoc.last_updated_at)} &middot;{" "}
+                        {formatBytes(committedDoc.file_size)} &middot;{" "}
+                        {committedDoc.page_count} pages
+                      </span>
+                    )}
+                    {isRaw && !hasSourcePdf && (
+                      <span className="stage-helper-text">Upload and commit a PDF first</span>
+                    )}
+                    {isRaw && hasSourcePdf && hasGeneratedRawWords && (
+                      <span className="chip-status">Generated, not yet committed</span>
+                    )}
+                    {isRaw && hasSourcePdf && !hasGeneratedRawWords && hasCommittedRawWords && (
+                      <span className="chip-status">Committed</span>
+                    )}
+                    {isRaw && hasSourcePdf && !hasGeneratedRawWords && !hasCommittedRawWords && (
+                      <span className="chip-status">Not generated</span>
+                    )}
+                    {isRaw && committedRawWords && (
+                      <span className="chip-meta">
+                        {committedRawWords.word_count} words &middot;{" "}
+                        {committedRawWords.page_count} pages
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
 
           {/* Middle — Action Panel */}
           <div className="action-panel">
-            <h2 className="panel-heading">PDF Upload</h2>
-
-            <div className="file-input-area">
-              <label className="file-label" htmlFor="pdf-upload">
-                Choose PDF
-              </label>
-              <input
-                id="pdf-upload"
-                type="file"
-                accept=".pdf"
-                onChange={handleFileChange}
-                disabled={committing}
-              />
-              {stagedFile && (
-                <div className="staged-file-info">
-                  <span className="staged-file-name">{stagedFile.name}</span>
-                  <span className="staged-file-size">{formatBytes(stagedFile.size)}</span>
+            {activeStage === "pdf_upload" && (
+              <>
+                <h2 className="panel-heading">PDF Upload</h2>
+                <div className="file-input-area">
+                  <label className="file-label" htmlFor="pdf-upload">
+                    Choose PDF
+                  </label>
+                  <input
+                    id="pdf-upload"
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleFileChange}
+                    disabled={committing}
+                  />
+                  {stagedFile && (
+                    <div className="staged-file-info">
+                      <span className="staged-file-name">{stagedFile.name}</span>
+                      <span className="staged-file-size">{formatBytes(stagedFile.size)}</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+                {commitError && <p className="commit-error">{commitError}</p>}
+                <button
+                  className="commit-btn"
+                  onClick={() => setCommitModalOpen(true)}
+                  disabled={!stagedFile || committing}
+                >
+                  {committing ? "Committing…" : "Commit Updates"}
+                </button>
+              </>
+            )}
 
-            {commitError && <p className="commit-error">{commitError}</p>}
-
-            <button
-              className="commit-btn"
-              onClick={() => setCommitModalOpen(true)}
-              disabled={!stagedFile || committing}
-            >
-              {committing ? "Committing…" : "Commit Updates"}
-            </button>
+            {activeStage === "raw_words" && (
+              <>
+                <h2 className="panel-heading">Raw Words</h2>
+                <p className="action-status-banner">
+                  {rawWordsStatus === "generating" && "Generating raw words…"}
+                  {rawWordsStatus === "committing" && "Committing…"}
+                  {rawWordsStatus === "success" && "Committed."}
+                  {rawWordsStatus === "generated" && "Generated. Not yet committed."}
+                  {rawWordsStatus === "idle" &&
+                    (hasCommittedRawWords
+                      ? "Committed baseline loaded."
+                      : "No raw words yet.")}
+                  {rawWordsStatus === "error" && "Something went wrong."}
+                </p>
+                {(generatedRawWords || committedRawWords) && (
+                  <p className="raw-words-summary">
+                    {(generatedRawWords ?? committedRawWords)!.word_count} words across{" "}
+                    {(generatedRawWords ?? committedRawWords)!.page_count} pages
+                  </p>
+                )}
+                {rawWordsError && (
+                  <p className="commit-error" role="alert">
+                    {rawWordsError}
+                  </p>
+                )}
+                <button
+                  className="commit-btn"
+                  onClick={handleGenerateRawWords}
+                  disabled={
+                    !hasSourcePdf ||
+                    rawWordsStatus === "generating" ||
+                    rawWordsStatus === "committing"
+                  }
+                >
+                  {rawWordsStatus === "generating"
+                    ? "Generating…"
+                    : hasGeneratedRawWords || hasCommittedRawWords
+                      ? "Regenerate Raw Words"
+                      : "Generate Raw Words"}
+                </button>
+                <button
+                  className="commit-btn commit-btn-secondary"
+                  onClick={handleCommitRawWords}
+                  disabled={!hasGeneratedRawWords || rawWordsStatus === "committing"}
+                >
+                  {rawWordsStatus === "committing" ? "Committing…" : "Commit Changes"}
+                </button>
+              </>
+            )}
           </div>
 
-          {/* Right — PDF Viewer */}
+          {/* Right — Viewer */}
           <div className="pdf-panel">
-            {committedDoc?.pdf_url ? (
-              <embed
-                className="pdf-viewer"
-                src={committedDoc.pdf_url}
-                type="application/pdf"
-              />
-            ) : (
-              <div className="pdf-empty-state">
-                <p>No PDF committed yet</p>
+            {activeStage === "pdf_upload" && (
+              committedDoc?.pdf_url ? (
+                <embed
+                  className="pdf-viewer"
+                  src={committedDoc.pdf_url}
+                  type="application/pdf"
+                />
+              ) : (
+                <div className="pdf-empty-state">
+                  <p>No PDF committed yet</p>
+                </div>
+              )
+            )}
+
+            {activeStage === "raw_words" && (
+              <div
+                className="raw-words-viewer"
+                onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
+                onMouseLeave={() => setMousePos(null)}
+              >
+                {generatedRawWords || committedRawWords ? (
+                  <>
+                    <RawWordsOverlay
+                      payload={(generatedRawWords ?? committedRawWords)!}
+                      variant={generatedRawWords ? "generated" : "committed"}
+                      getPageImageUrl={
+                        committedDoc
+                          ? (pageNum) => `${API_BASE}/config/${chatroomSlug}/page-image/${pageNum}`
+                          : null
+                      }
+                      onHover={handleRawWordHover}
+                    />
+                    <RawWordsHoverCard word={hoveredWord} index={hoveredIndex} mousePos={mousePos} />
+                  </>
+                ) : (
+                  <div className="pdf-empty-state">
+                    <p>
+                      {hasSourcePdf
+                        ? "Click Generate Raw Words to extract word-level quads."
+                        : "Upload and commit a PDF first."}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
