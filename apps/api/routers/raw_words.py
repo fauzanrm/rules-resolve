@@ -298,4 +298,7 @@ def commit_raw_words(chatroom_id: int, body: CommitRequest):
     from routers.canonical_words import purge_canonical_words
     purge_canonical_words(document_id)
 
+    from routers.nodes import purge_nodes
+    purge_nodes(document_id)
+
     return RawWordsPayload(**envelope)

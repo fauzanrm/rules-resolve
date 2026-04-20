@@ -707,6 +707,10 @@ body {
   overflow-y: auto;
 }
 
+.action-panel--wide {
+  width: 380px;
+}
+
 /* ── PDF panel (right) ────────────────────────────────────────────────────── */
 
 .pdf-panel {
@@ -1106,4 +1110,229 @@ input[type="file"] {
   margin-top: 0.6rem;
   font-size: 0.875rem;
   color: #b45309;
+}
+
+/* ── Outline Nodes stage ─────────────────────────────────────────────────── */
+
+.outline-add-node-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.outline-inferred-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.625rem;
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+}
+
+.outline-inferred-input {
+  padding: 0.45rem 0.625rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.outline-inferred-input:focus {
+  border-color: #888;
+}
+
+.outline-level-select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  background: #fff;
+  outline: none;
+}
+
+.outline-level-select--inline {
+  padding: 0.2rem 0.35rem;
+  font-size: 0.8rem;
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.outline-inferred-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.outline-node-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.outline-node-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #e8e8e8;
+  background: #fafafa;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+  min-width: 0;
+}
+
+.outline-node-row:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.outline-node-row--active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.outline-node-row[draggable="true"] {
+  cursor: grab;
+}
+
+.outline-drag-handle {
+  font-size: 0.9rem;
+  color: #bbb;
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.outline-type-chip {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+.outline-type-chip--explicit {
+  background: rgba(99, 102, 241, 0.15);
+  color: #3730a3;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.outline-type-chip--inferred {
+  background: rgba(156, 163, 175, 0.18);
+  color: #4b5563;
+  border: 1px solid rgba(156, 163, 175, 0.4);
+}
+
+.outline-node-label {
+  font-size: 0.8125rem;
+  color: #222;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.outline-delete-btn {
+  background: none;
+  border: none;
+  color: #bbb;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.1rem 0.25rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: color 0.1s, background 0.1s;
+}
+
+.outline-delete-btn:hover {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+/* Heading-level cycle button (replaces select) */
+.outline-level-btn {
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 2rem;
+  text-align: center;
+  transition: opacity 0.1s;
+}
+
+.outline-level-btn:hover {
+  opacity: 0.8;
+}
+
+.outline-level-btn--h1 {
+  background: rgba(99, 102, 241, 0.18);
+  color: #3730a3;
+  border-color: rgba(99, 102, 241, 0.45);
+}
+
+.outline-level-btn--h2 {
+  background: rgba(16, 185, 129, 0.18);
+  color: #065f46;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.outline-level-btn--h3 {
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.outline-level-btn--none {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+
+/* Zoom controls */
+.outline-zoom-controls {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
+  border-bottom: 1px solid #e5e7eb;
+  width: fit-content;
+}
+
+.outline-zoom-btn {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s;
+}
+
+.outline-zoom-btn:hover {
+  background: #e5e7eb;
+}
+
+.outline-zoom-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  min-width: 2.5rem;
+  text-align: center;
 }

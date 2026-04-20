@@ -11,6 +11,7 @@ from routers.chatrooms import router as chatrooms_router
 from routers.config import router as config_router
 from routers.raw_words import router as raw_words_router
 from routers.canonical_words import router as canonical_words_router
+from routers.nodes import router as nodes_router
 
 app = FastAPI()
 
@@ -29,3 +30,4 @@ app.include_router(chatrooms_router, prefix="/chatrooms")
 app.include_router(config_router, prefix="/config")
 app.include_router(raw_words_router, prefix="/raw-words")
 app.include_router(canonical_words_router, prefix="/canonical-words")
+app.include_router(nodes_router, prefix="/nodes")

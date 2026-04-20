@@ -225,6 +225,9 @@ def commit_canonical_words(chatroom_id: int, body: CommitRequest):
         for canonical_idx, (raw_idx, w) in enumerate(indexed_words)
     ]
 
+    from routers.nodes import purge_nodes
+    purge_nodes(document_id)
+
     return CanonicalWordsState(
         chatroom_id=chatroom_id,
         document_id=document_id,
