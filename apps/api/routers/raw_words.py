@@ -295,4 +295,7 @@ def commit_raw_words(chatroom_id: int, body: CommitRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to persist raw words: {e}")
 
+    from routers.canonical_words import purge_canonical_words
+    purge_canonical_words(document_id)
+
     return RawWordsPayload(**envelope)

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from db import get_connection
 from storage import BUCKET, get_supabase, get_signed_url, upload_file
 from routers.raw_words import purge_raw_words
+from routers.canonical_words import purge_canonical_words
 
 router = APIRouter()
 
@@ -188,6 +189,7 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
     supabase = get_supabase()
     if supabase:
         purge_raw_words(supabase, chatroom_id, doc_id)
+        purge_canonical_words(doc_id)
         if old_file_name and old_file_name != file.filename:
             try:
                 supabase.storage.from_("chatroom-assets").remove(

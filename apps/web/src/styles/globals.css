@@ -1008,3 +1008,102 @@ input[type="file"] {
   color: #222;
   font-weight: 500;
 }
+
+/* ── Canonical Words stage ───────────────────────────────────────────────── */
+
+.canonical-words-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+}
+
+.canonical-quad {
+  position: absolute;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.05s;
+}
+
+.canonical-quad.raw-light {
+  background: rgba(156, 163, 175, 0.12);
+  border-color: rgba(156, 163, 175, 0.3);
+}
+
+.canonical-quad.included {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.canonical-quad.selected {
+  background: rgba(29, 78, 216, 0.25);
+  border-color: rgba(29, 78, 216, 0.7);
+}
+
+.canonical-quad.included.selected {
+  background: rgba(29, 78, 216, 0.3);
+  border-color: rgba(29, 78, 216, 0.8);
+}
+
+.canonical-count-row {
+  display: flex;
+  gap: 1.25rem;
+  font-size: 0.875rem;
+  color: #333;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.canonical-count-label {
+  color: #888;
+}
+
+.canonical-selection-summary {
+  font-size: 0.8125rem;
+  color: #555;
+  margin-bottom: 0.25rem;
+}
+
+.canonical-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  min-width: 200px;
+  pointer-events: none;
+}
+
+.canonical-tooltip-text {
+  font-weight: 600;
+  color: #111;
+  margin-bottom: 0.35rem;
+}
+
+.canonical-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.1rem 0;
+  color: #333;
+}
+
+.canonical-tooltip-label {
+  color: #888;
+}
+
+/* Rubber-band rect selection */
+.canonical-rect-select {
+  border: 1.5px dashed rgba(29, 78, 216, 0.8);
+  background: rgba(29, 78, 216, 0.1);
+  border-radius: 2px;
+}
+
+/* Warning text inside modals */
+.modal-warning {
+  margin-top: 0.6rem;
+  font-size: 0.875rem;
+  color: #b45309;
+}

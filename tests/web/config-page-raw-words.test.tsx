@@ -88,6 +88,14 @@ beforeEach(() => {
   (authLib.getSession as jest.Mock).mockReturnValue(adminSession);
 });
 
+const emptyCanonicalState = {
+  chatroom_id: 1,
+  document_id: 7,
+  has_raw_words: true,
+  committed_words: null,
+  committed_at: null,
+};
+
 function mockInitialLoad(
   { hasPdf, committed }: { hasPdf: boolean; committed?: typeof samplePayload | null } = {
     hasPdf: true,
@@ -104,12 +112,13 @@ function mockInitialLoad(
       raw_words: committed
         ? { ...committed, status: "committed", committed_at: "2026-04-18T10:00:00Z" }
         : null,
-    });
+    })
+    .mockResolvedValueOnce(emptyCanonicalState);
 }
 
 async function renderAndLoad() {
   render(<ConfigPage />);
-  await waitFor(() => expect(apiLib.get).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(apiLib.get).toHaveBeenCalledTimes(3));
 }
 
 // 1. Committed raw words load on mount

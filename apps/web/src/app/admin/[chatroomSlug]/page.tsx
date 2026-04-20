@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { get, post, postForm, patch, ApiError } from "@/lib/api";
 import Navbar from "@/components/Navbar";
 import RawWordsOverlay from "@/components/config/RawWordsOverlay";
 import RawWordsHoverCard from "@/components/config/RawWordsHoverCard";
+import CanonicalWordsOverlay from "@/components/config/CanonicalWordsOverlay";
 import { RawWord, RawWordsPayload } from "@/components/config/rawWordsTypes";
+import { CanonicalWordsState } from "@/components/config/canonicalWordsTypes";
 
 const MAX_NAME_LENGTH = 50;
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -96,9 +98,31 @@ export default function ConfigPage() {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
+  // Canonical words stage state
+  const [committedCanonicalWordIds, setCommittedCanonicalWordIds] = useState<Set<string> | null>(null);
+  const [canonicalCommittedAt, setCanonicalCommittedAt] = useState<string | null>(null);
+  const [workingIncludedIds, setWorkingIncludedIds] = useState<Set<string> | null>(null);
+  const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
+  const [canonicalStatus, setCanonicalStatus] = useState<"idle" | "committing" | "success" | "error">("idle");
+  const [canonicalError, setCanonicalError] = useState<string | null>(null);
+  const [hoveredCanonicalWordId, setHoveredCanonicalWordId] = useState<string | null>(null);
+  const [canonicalMousePos, setCanonicalMousePos] = useState<{ x: number; y: number } | null>(null);
+
+  // Modal for warning before raw words regeneration
+  const [rawWordsGenWarnOpen, setRawWordsGenWarnOpen] = useState(false);
+
   const hasGeneratedRawWords = generatedRawWords !== null;
   const hasCommittedRawWords = committedRawWords !== null;
   const isRawWordsDirty = hasGeneratedRawWords;
+
+  const isCanonicalDirty = useMemo(() => {
+    if (!workingIncludedIds || !committedRawWords) return false;
+    const reference = committedCanonicalWordIds
+      ?? new Set(committedRawWords.words.map((w) => w.word_id));
+    if (workingIncludedIds.size !== reference.size) return true;
+    for (const id of workingIncludedIds) if (!reference.has(id)) return true;
+    return false;
+  }, [workingIncludedIds, committedCanonicalWordIds, committedRawWords]);
 
   useEffect(() => {
     const session = getSession();
@@ -111,31 +135,63 @@ export default function ConfigPage() {
       return;
     }
 
-    get<ConfigPageData>(`/config/${chatroomSlug}`)
-      .then((data) => {
-        setCommittedDoc(data.document);
-        setChatroomId(data.chatroom_id);
-        setChatroomName(data.chatroom_name);
-        return get<RawWordsState>(`/raw-words/${data.chatroom_id}`);
-      })
-      .then((rw) => {
-        if (!rw) return;
-        setHasSourcePdf(rw.has_source_pdf);
-        if (rw.raw_words) {
-          setCommittedRawWords(rw.raw_words);
+    async function loadPage() {
+      const data = await get<ConfigPageData>(`/config/${chatroomSlug}`);
+      setCommittedDoc(data.document);
+      setChatroomId(data.chatroom_id);
+      setChatroomName(data.chatroom_name);
+
+      const rw = await get<RawWordsState>(`/raw-words/${data.chatroom_id}`);
+      setHasSourcePdf(rw.has_source_pdf);
+      const rawWordsPayload = rw.raw_words ?? null;
+      if (rawWordsPayload) setCommittedRawWords(rawWordsPayload);
+      if (rw.error) { setRawWordsError(rw.error); setRawWordsStatus("error"); }
+
+      const cw = await get<CanonicalWordsState>(`/canonical-words/${data.chatroom_id}`);
+      if (cw.committed_words?.length && rawWordsPayload) {
+        const ids = new Set(
+          cw.committed_words
+            .map((w) => rawWordsPayload.words[w.raw_word_index]?.word_id)
+            .filter((id): id is string => Boolean(id)),
+        );
+        if (ids.size > 0) {
+          setCommittedCanonicalWordIds(ids);
+          setCanonicalCommittedAt(cw.committed_at);
         }
-        if (rw.error) {
-          setRawWordsError(rw.error);
-          setRawWordsStatus("error");
-        }
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : "Failed to load config.";
-        setLoadError(msg);
-      });
+      }
+    }
+
+    loadPage().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Failed to load config.";
+      setLoadError(msg);
+    });
   }, [chatroomSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const anyDirty = isDirty || isRawWordsDirty;
+  // Precomputed maps for canonical tooltip
+  const rawWordIndexMap = useMemo(() => {
+    if (!committedRawWords) return new Map<string, number>();
+    const map = new Map<string, number>();
+    committedRawWords.words.forEach((w, i) => map.set(w.word_id, i));
+    return map;
+  }, [committedRawWords]);
+
+  const workingCanonicalIndexMap = useMemo(() => {
+    if (!workingIncludedIds || !committedRawWords) return new Map<string, number>();
+    const sorted = committedRawWords.words
+      .filter((w) => workingIncludedIds.has(w.word_id))
+      .sort(
+        (a, b) =>
+          a.page - b.page ||
+          a.block_no - b.block_no ||
+          a.line_no - b.line_no ||
+          a.word_no - b.word_no,
+      );
+    const map = new Map<string, number>();
+    sorted.forEach((w, i) => map.set(w.word_id, i));
+    return map;
+  }, [workingIncludedIds, committedRawWords]);
+
+  const anyDirty = isDirty || isRawWordsDirty || isCanonicalDirty;
 
   useEffect(() => {
     if (!anyDirty) return;
@@ -191,7 +247,7 @@ export default function ConfigPage() {
       setCommittedDoc(doc);
       setStagedFile(null);
       setIsDirty(false);
-      // Source PDF changed: any prior raw words are now invalidated
+      // Source PDF changed: invalidate raw words and canonical words
       setCommittedRawWords(null);
       setGeneratedRawWords(null);
       setHoveredWord(null);
@@ -199,6 +255,12 @@ export default function ConfigPage() {
       setRawWordsStatus("idle");
       setRawWordsError(null);
       setHasSourcePdf(true);
+      setCommittedCanonicalWordIds(null);
+      setWorkingIncludedIds(null);
+      setSelectedWordIds(new Set());
+      setCanonicalStatus("idle");
+      setCanonicalError(null);
+      setCanonicalCommittedAt(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Commit failed. Please try again.";
       setCommitError(msg);
@@ -267,6 +329,30 @@ export default function ConfigPage() {
     }
   }
 
+  function handleWordDragEnter(wordId: string) {
+    setSelectedWordIds((prev) => {
+      const next = new Set(prev);
+      next.add(wordId);
+      return next;
+    });
+  }
+
+  function handleRectSelect(wordIds: string[]) {
+    setSelectedWordIds((prev) => {
+      const next = new Set(prev);
+      wordIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function handleGenerateRawWordsClick() {
+    if (committedCanonicalWordIds !== null) {
+      setRawWordsGenWarnOpen(true);
+    } else {
+      handleGenerateRawWords();
+    }
+  }
+
   async function handleGenerateRawWords() {
     if (!chatroomId) return;
     setRawWordsStatus("generating");
@@ -302,6 +388,13 @@ export default function ConfigPage() {
       setCommittedRawWords(committed);
       setGeneratedRawWords(null);
       setRawWordsStatus("success");
+      // Raw words replaced: canonical words are now invalid
+      setCommittedCanonicalWordIds(null);
+      setWorkingIncludedIds(null);
+      setSelectedWordIds(new Set());
+      setCanonicalStatus("idle");
+      setCanonicalError(null);
+      setCanonicalCommittedAt(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -319,6 +412,15 @@ export default function ConfigPage() {
     setHoveredIndex(index);
   }
 
+  function openCanonicalStage() {
+    if (workingIncludedIds === null && committedRawWords) {
+      const reference = committedCanonicalWordIds
+        ?? new Set(committedRawWords.words.map((w) => w.word_id));
+      setWorkingIncludedIds(new Set(reference));
+    }
+    setActiveStage("canonical_words");
+  }
+
   function handleSelectStage(key: StageKey) {
     if (key === "pdf_upload") {
       setActiveStage("pdf_upload");
@@ -326,6 +428,82 @@ export default function ConfigPage() {
     }
     if (key === "raw_words" && (hasSourcePdf || hasCommittedRawWords)) {
       setActiveStage("raw_words");
+      return;
+    }
+    if (key === "canonical_words" && hasCommittedRawWords) {
+      openCanonicalStage();
+    }
+  }
+
+  function handleWordClick(wordId: string) {
+    setSelectedWordIds((prev) => {
+      const next = new Set(prev);
+      next.has(wordId) ? next.delete(wordId) : next.add(wordId);
+      return next;
+    });
+  }
+
+  function handleExcludeSelected() {
+    if (!workingIncludedIds) return;
+    setWorkingIncludedIds((prev) => {
+      if (!prev) return prev;
+      const next = new Set(prev);
+      for (const id of selectedWordIds) next.delete(id);
+      return next;
+    });
+    setSelectedWordIds(new Set());
+  }
+
+  function handleIncludeSelected() {
+    if (!workingIncludedIds) return;
+    setWorkingIncludedIds((prev) => {
+      if (!prev) return prev;
+      const next = new Set(prev);
+      for (const id of selectedWordIds) next.add(id);
+      return next;
+    });
+    setSelectedWordIds(new Set());
+  }
+
+  function handleResetToAllIncluded() {
+    if (!committedRawWords) return;
+    setWorkingIncludedIds(new Set(committedRawWords.words.map((w) => w.word_id)));
+    setSelectedWordIds(new Set());
+  }
+
+  async function handleCommitCanonical() {
+    if (!chatroomId || !workingIncludedIds || !committedRawWords) return;
+    setCanonicalStatus("committing");
+    setCanonicalError(null);
+    try {
+      const included_raw_word_indices = Array.from(workingIncludedIds)
+        .map((id) => rawWordIndexMap.get(id))
+        .filter((i): i is number => i !== undefined);
+
+      const result = await post<CanonicalWordsState>(
+        `/canonical-words/${chatroomId}/commit`,
+        { included_raw_word_indices },
+      );
+
+      const ids = new Set(
+        result.committed_words
+          ?.map((w) => committedRawWords.words[w.raw_word_index]?.word_id)
+          .filter((id): id is string => Boolean(id)) ?? [],
+      );
+      setCommittedCanonicalWordIds(ids);
+      setWorkingIncludedIds(new Set(ids));
+      setCanonicalCommittedAt(result.committed_at);
+      setSelectedWordIds(new Set());
+      setCanonicalStatus("success");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Commit failed";
+      setCanonicalError(msg);
+      setCanonicalStatus("error");
     }
   }
 
@@ -396,14 +574,23 @@ export default function ConfigPage() {
               {STAGES.map((stage) => {
                 const isPdf = stage.key === "pdf_upload";
                 const isRaw = stage.key === "raw_words";
-                const clickable = isPdf || (isRaw && (hasSourcePdf || hasCommittedRawWords));
+                const isCanonical = stage.key === "canonical_words";
+                const clickable =
+                  isPdf ||
+                  (isRaw && (hasSourcePdf || hasCommittedRawWords)) ||
+                  (isCanonical && hasCommittedRawWords);
                 const isActive = stage.key === activeStage;
+                const hasCommittedCanonical = committedCanonicalWordIds !== null;
                 const committedClass =
-                  (isPdf && committedDoc) || (isRaw && hasCommittedRawWords && !hasGeneratedRawWords)
+                  (isPdf && committedDoc) ||
+                  (isRaw && hasCommittedRawWords && !hasGeneratedRawWords) ||
+                  (isCanonical && hasCommittedCanonical && !isCanonicalDirty)
                     ? "chip-committed"
                     : "";
                 const generatedClass =
-                  isRaw && hasGeneratedRawWords ? "chip-generated" : "";
+                  (isRaw && hasGeneratedRawWords) || (isCanonical && isCanonicalDirty && workingIncludedIds !== null)
+                    ? "chip-generated"
+                    : "";
                 const disabledClass = clickable ? "chip-active" : "chip-disabled";
                 return (
                   <li
@@ -444,6 +631,23 @@ export default function ConfigPage() {
                       <span className="chip-meta">
                         {committedRawWords.word_count} words &middot;{" "}
                         {committedRawWords.page_count} pages
+                      </span>
+                    )}
+                    {isCanonical && !hasCommittedRawWords && (
+                      <span className="stage-helper-text">Generate Raw Words first</span>
+                    )}
+                    {isCanonical && hasCommittedRawWords && committedCanonicalWordIds === null && (
+                      <span className="chip-status">Not committed</span>
+                    )}
+                    {isCanonical && hasCommittedRawWords && committedCanonicalWordIds !== null && !isCanonicalDirty && (
+                      <span className="chip-status">Committed</span>
+                    )}
+                    {isCanonical && hasCommittedRawWords && isCanonicalDirty && (
+                      <span className="chip-status">Unsaved changes</span>
+                    )}
+                    {isCanonical && committedCanonicalWordIds !== null && (
+                      <span className="chip-meta">
+                        {committedCanonicalWordIds.size} words included
                       </span>
                     )}
                   </li>
@@ -513,7 +717,7 @@ export default function ConfigPage() {
                 )}
                 <button
                   className="commit-btn"
-                  onClick={handleGenerateRawWords}
+                  onClick={handleGenerateRawWordsClick}
                   disabled={
                     !hasSourcePdf ||
                     rawWordsStatus === "generating" ||
@@ -535,6 +739,70 @@ export default function ConfigPage() {
                 </button>
               </>
             )}
+
+            {activeStage === "canonical_words" && workingIncludedIds !== null && committedRawWords && (
+              <>
+                <h2 className="panel-heading">Canonical Words</h2>
+                <p className="action-status-banner">
+                  {canonicalStatus === "committing" && "Committing…"}
+                  {canonicalStatus === "success" && `Committed.${canonicalCommittedAt ? " " + formatDate(canonicalCommittedAt) : ""}`}
+                  {canonicalStatus === "error" && "Something went wrong."}
+                  {canonicalStatus === "idle" && (
+                    isCanonicalDirty
+                      ? "Unsaved changes."
+                      : committedCanonicalWordIds !== null
+                        ? `Committed.${canonicalCommittedAt ? " " + formatDate(canonicalCommittedAt) : ""}`
+                        : "All words included by default."
+                  )}
+                </p>
+                <div className="canonical-count-row">
+                  <span><span className="canonical-count-label">Raw </span>{committedRawWords.word_count}</span>
+                  <span><span className="canonical-count-label">Included </span>{workingIncludedIds.size}</span>
+                  <span><span className="canonical-count-label">Excluded </span>{committedRawWords.word_count - workingIncludedIds.size}</span>
+                </div>
+                {selectedWordIds.size > 0 && (
+                  <p className="canonical-selection-summary">{selectedWordIds.size} selected</p>
+                )}
+                {canonicalError && (
+                  <p className="commit-error" role="alert">{canonicalError}</p>
+                )}
+                <button
+                  className="commit-btn commit-btn-secondary"
+                  onClick={() => setSelectedWordIds(new Set())}
+                  disabled={selectedWordIds.size === 0}
+                >
+                  Clear Selection
+                </button>
+                <button
+                  className="commit-btn commit-btn-secondary"
+                  onClick={handleExcludeSelected}
+                  disabled={selectedWordIds.size === 0 || ![...selectedWordIds].some((id) => workingIncludedIds.has(id))}
+                >
+                  Exclude selected
+                </button>
+                <button
+                  className="commit-btn commit-btn-secondary"
+                  onClick={handleIncludeSelected}
+                  disabled={selectedWordIds.size === 0 || ![...selectedWordIds].some((id) => !workingIncludedIds.has(id))}
+                >
+                  Include selected
+                </button>
+                <button
+                  className="commit-btn commit-btn-secondary"
+                  onClick={handleResetToAllIncluded}
+                  disabled={workingIncludedIds.size === committedRawWords.word_count}
+                >
+                  Reset to all included
+                </button>
+                <button
+                  className="commit-btn"
+                  onClick={handleCommitCanonical}
+                  disabled={!isCanonicalDirty || canonicalStatus === "committing"}
+                >
+                  {canonicalStatus === "committing" ? "Committing…" : "Commit Updates"}
+                </button>
+              </>
+            )}
           </div>
 
           {/* Right — Viewer */}
@@ -551,6 +819,38 @@ export default function ConfigPage() {
                   <p>No PDF committed yet</p>
                 </div>
               )
+            )}
+
+            {activeStage === "canonical_words" && (
+              <div
+                className="raw-words-viewer"
+                onMouseMove={(e) => setCanonicalMousePos({ x: e.clientX, y: e.clientY })}
+                onMouseLeave={() => {
+                  setCanonicalMousePos(null);
+                  setHoveredCanonicalWordId(null);
+                }}
+              >
+                {workingIncludedIds !== null && committedRawWords ? (
+                  <CanonicalWordsOverlay
+                    rawWordsPayload={committedRawWords}
+                    workingIncludedIds={workingIncludedIds}
+                    selectedWordIds={selectedWordIds}
+                    getPageImageUrl={
+                      committedDoc
+                        ? (pageNum) => `${API_BASE}/config/${chatroomSlug}/page-image/${pageNum}`
+                        : null
+                    }
+                    onWordClick={handleWordClick}
+                    onWordDragEnter={handleWordDragEnter}
+                    onRectSelect={handleRectSelect}
+                    onHover={setHoveredCanonicalWordId}
+                  />
+                ) : (
+                  <div className="pdf-empty-state">
+                    <p>Generate and commit Raw Words first.</p>
+                  </div>
+                )}
+              </div>
             )}
 
             {activeStage === "raw_words" && (
@@ -588,6 +888,35 @@ export default function ConfigPage() {
         </div>
       )}
 
+      {/* Canonical words hover tooltip */}
+      {activeStage === "canonical_words" && hoveredCanonicalWordId && canonicalMousePos && committedRawWords && workingIncludedIds && (
+        <div
+          className="canonical-tooltip"
+          style={{ left: canonicalMousePos.x + 14, top: canonicalMousePos.y + 14 }}
+          role="status"
+        >
+          {(() => {
+            const rawIdx = rawWordIndexMap.get(hoveredCanonicalWordId) ?? -1;
+            const word = committedRawWords.words[rawIdx];
+            const canonIdx = workingCanonicalIndexMap.get(hoveredCanonicalWordId);
+            const isIncluded = workingIncludedIds.has(hoveredCanonicalWordId);
+            return (
+              <>
+                <div className="canonical-tooltip-text">{word?.text ?? "—"}</div>
+                <div className="canonical-tooltip-row">
+                  <span className="canonical-tooltip-label">Raw index</span>
+                  <span>{rawIdx >= 0 ? rawIdx : "—"}</span>
+                </div>
+                <div className="canonical-tooltip-row">
+                  <span className="canonical-tooltip-label">Canonical index</span>
+                  <span>{isIncluded && canonIdx !== undefined ? canonIdx : "Not included"}</span>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Commit confirmation modal */}
       {commitModalOpen && (
         <div className="modal-overlay" role="dialog" aria-modal="true">
@@ -603,6 +932,11 @@ export default function ConfigPage() {
                 This will upload <strong>{stagedFile?.name}</strong> and overwrite any existing PDF
                 and cover image for this chatroom.
               </p>
+              {(hasCommittedRawWords || committedCanonicalWordIds !== null) && (
+                <p className="modal-warning">
+                  Raw words detection{committedCanonicalWordIds !== null ? " and canonical words selection" : ""} will be cleared and must be redone.
+                </p>
+              )}
             </div>
             <div className="modal-footer">
               <button className="modal-cancel-btn" onClick={() => setCommitModalOpen(false)}>
@@ -610,6 +944,36 @@ export default function ConfigPage() {
               </button>
               <button className="modal-confirm-btn" onClick={handleCommitConfirm}>
                 Commit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Raw words regeneration warning modal */}
+      {rawWordsGenWarnOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-header">
+              <h2>Regenerate raw words?</h2>
+            </div>
+            <div className="modal-body">
+              <p className="modal-warning">
+                This will clear all committed canonical words. You will need to redo the canonical words selection.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-cancel-btn" onClick={() => setRawWordsGenWarnOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="modal-confirm-btn"
+                onClick={() => {
+                  setRawWordsGenWarnOpen(false);
+                  handleGenerateRawWords();
+                }}
+              >
+                Continue
               </button>
             </div>
           </div>
