@@ -130,15 +130,9 @@ def _validate_nodes(nodes: List[OutlineNode]) -> None:
                 detail=f"Node at index {i}: start_canonical_index must be <= end_canonical_index",
             )
 
-    # Validate explicit node ordering and overlap (skip inferred nodes with 0,0)
+    # Validate that explicit nodes don't overlap in canonical index spans
     explicit = [(i, n) for i, n in enumerate(nodes) if not _is_inferred(n)]
     sorted_by_ci = sorted(explicit, key=lambda t: t[1].start_canonical_index)
-
-    if [t[0] for t in sorted_by_ci] != [t[0] for t in explicit]:
-        raise HTTPException(
-            status_code=400,
-            detail="Explicit nodes must be ordered by their canonical index positions",
-        )
 
     for k in range(len(sorted_by_ci) - 1):
         _, curr = sorted_by_ci[k]
@@ -226,6 +220,9 @@ def commit_nodes(chatroom_id: int, body: CommitNodesRequest):
                         VALUES {placeholders}""",
                     flat,
                 )
+
+    from routers.chunks import purge_chunk_assignments
+    purge_chunk_assignments(document_id)
 
     return NodesState(
         chatroom_id=chatroom_id,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { get, post, postForm, patch, ApiError } from "@/lib/api";
@@ -9,6 +9,7 @@ import RawWordsOverlay from "@/components/config/RawWordsOverlay";
 import RawWordsHoverCard from "@/components/config/RawWordsHoverCard";
 import CanonicalWordsOverlay from "@/components/config/CanonicalWordsOverlay";
 import OutlineNodesOverlay from "@/components/config/OutlineNodesOverlay";
+import ChunksOverlay from "@/components/config/ChunksOverlay";
 import { RawWord, RawWordsPayload } from "@/components/config/rawWordsTypes";
 import { CanonicalWordsState } from "@/components/config/canonicalWordsTypes";
 import {
@@ -19,7 +20,17 @@ import {
   committedToDraft,
   draftToApi,
   validateHierarchy,
+  levelToNum,
+  numToLevel,
+  getNodeSubtree,
 } from "@/components/config/outlineTypes";
+import {
+  DraftChunk,
+  ChunkItemApi,
+  ChunksApiResponse,
+  committedToDraft as chunkCommittedToDraft,
+  draftToApi as chunkDraftToApi,
+} from "@/components/config/chunkTypes";
 
 const MAX_NAME_LENGTH = 50;
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -125,18 +136,47 @@ export default function ConfigPage() {
   const [committedNodes, setCommittedNodes] = useState<CommittedNodeApi[] | null>(null);
   const [workingNodes, setWorkingNodes] = useState<DraftNode[] | null>(null);
   const [outlineStatus, setOutlineStatus] = useState<"idle" | "committing" | "success" | "error">("idle");
-  const [outlineError, setOutlineError] = useState<string | null>(null);
   const [outlineCommittedAt, setOutlineCommittedAt] = useState<string | null>(null);
   const [selectedCanonicalIndices, setSelectedCanonicalIndices] = useState<Set<number>>(new Set());
   const [activeNodeClientId, setActiveNodeClientId] = useState<string | null>(null);
   const [inferredNodeForm, setInferredNodeForm] = useState<{ label: string; level: HeadingLevel | "" } | null>(null);
-  const [addNodeError, setAddNodeError] = useState<string | null>(null);
-  const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [canonicalCommitWarnOpen, setCanonicalCommitWarnOpen] = useState(false);
   const [outlineZoom, setOutlineZoom] = useState(1.0);
   const [hoveredOutlineIndex, setHoveredOutlineIndex] = useState<number | null>(null);
   const [outlineMousePos, setOutlineMousePos] = useState<{ x: number; y: number } | null>(null);
   const dragNodeClientIdRef = useRef<string | null>(null);
+  const [nodeDropTarget, setNodeDropTarget] = useState<
+    { type: "before"; anchorId: string } | { type: "on"; targetId: string } | { type: "end" } | null
+  >(null);
+  const [dragSubtreeIds, setDragSubtreeIds] = useState<Set<string>>(new Set());
+
+  // Chunks stage state
+  const [committedChunks, setCommittedChunks] = useState<ChunkItemApi[] | null>(null);
+  const [workingChunks, setWorkingChunks] = useState<DraftChunk[] | null>(null);
+  const [chunksStatus, setChunksStatus] = useState<"idle" | "committing" | "success" | "error">("idle");
+  const [selectedChunkCanonicalIndices, setSelectedChunkCanonicalIndices] = useState<Set<number>>(new Set());
+  const [activeChunkClientId, setActiveChunkClientId] = useState<string | null>(null);
+  const [activeNodeIndexForChunk, setActiveNodeIndexForChunk] = useState<number | null>(null);
+  const [chunkZoom, setChunkZoom] = useState(1.0);
+  const [hoveredChunkCanonicalIndex, setHoveredChunkCanonicalIndex] = useState<number | null>(null);
+  const [chunkMousePos, setChunkMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [nodesCommitWarnOpen, setNodesCommitWarnOpen] = useState(false);
+  const dragChunkClientIdRef = useRef<string | null>(null);
+  const [chunksPanelSplit, setChunksPanelSplit] = useState<number>(65);
+  const isDividerDraggingRef = useRef(false);
+  const dividerContainerRef = useRef<HTMLDivElement>(null);
+
+  // Toast notifications
+  type ToastItem = { id: string; message: string };
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  function addToast(message: string) {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { id, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
+  }
+  function dismissToast(id: string) {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }
 
   const hasGeneratedRawWords = generatedRawWords !== null;
   const hasCommittedRawWords = committedRawWords !== null;
@@ -162,6 +202,41 @@ export default function ConfigPage() {
     }));
     return JSON.stringify(working) !== JSON.stringify(committed);
   }, [workingNodes, committedNodes]);
+
+  const isChunksDirty = useMemo(() => {
+    if (!workingChunks && !committedChunks) return false;
+    const working = (workingChunks ?? []).map((c, i) => chunkDraftToApi(c, i));
+    return JSON.stringify(working) !== JSON.stringify(committedChunks ?? []);
+  }, [workingChunks, committedChunks]);
+
+  const chunkNodeInfoMap = useMemo(() => {
+    const map = new Map<number, { chunk: DraftChunk }>();
+    (workingChunks ?? []).forEach((chunk) => {
+      for (let i = chunk.startCanonicalIndex; i <= chunk.endCanonicalIndex; i++) {
+        map.set(i, { chunk });
+      }
+    });
+    return map;
+  }, [workingChunks]);
+
+  const chunkNodeRangeInfoMap = useMemo(() => {
+    const map = new Map<number, { nodeIndex: number; nodeType: string; label: string }>();
+    (committedNodes ?? []).forEach((node, nodeIndex) => {
+      const isInferred = node.start_canonical_index === 0 && node.end_canonical_index === 0;
+      if (!isInferred) {
+        for (let i = node.start_canonical_index; i <= node.end_canonical_index; i++) {
+          map.set(i, { nodeIndex, nodeType: node.node_type, label: node.label });
+        }
+      }
+    });
+    return map;
+  }, [committedNodes]);
+
+  const chunkClientIdToDisplayIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    (workingChunks ?? []).forEach((c, i) => map.set(c.clientId, i));
+    return map;
+  }, [workingChunks]);
 
   useEffect(() => {
     const session = getSession();
@@ -203,6 +278,12 @@ export default function ConfigPage() {
       if (nd.committed_nodes?.length) {
         setCommittedNodes(nd.committed_nodes);
         setWorkingNodes(nd.committed_nodes.map(committedToDraft));
+      }
+
+      const ck = await get<ChunksApiResponse>(`/chunks/${data.chatroom_id}`);
+      if (ck.committed_chunks?.length) {
+        setCommittedChunks(ck.committed_chunks);
+        setWorkingChunks(ck.committed_chunks.map(chunkCommittedToDraft));
       }
     }
 
@@ -263,7 +344,7 @@ export default function ConfigPage() {
     return map;
   }, [workingNodes]);
 
-  const anyDirty = isDirty || isRawWordsDirty || isCanonicalDirty || isOutlineDirty;
+  const anyDirty = isDirty || isRawWordsDirty || isCanonicalDirty || isOutlineDirty || isChunksDirty;
 
   useEffect(() => {
     if (!anyDirty) return;
@@ -273,6 +354,25 @@ export default function ConfigPage() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [anyDirty]);
+
+  useEffect(() => {
+    function handleDividerMouseMove(e: MouseEvent) {
+      if (!isDividerDraggingRef.current || !dividerContainerRef.current) return;
+      const rect = dividerContainerRef.current.getBoundingClientRect();
+      const relative = e.clientY - rect.top;
+      const pct = Math.max(15, Math.min(85, (relative / rect.height) * 100));
+      setChunksPanelSplit(pct);
+    }
+    function handleDividerMouseUp() {
+      isDividerDraggingRef.current = false;
+    }
+    document.addEventListener("mousemove", handleDividerMouseMove);
+    document.addEventListener("mouseup", handleDividerMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleDividerMouseMove);
+      document.removeEventListener("mouseup", handleDividerMouseUp);
+    };
+  }, []);
 
   function guardedNavigate(navigate: () => void) {
     if (anyDirty) {
@@ -336,10 +436,16 @@ export default function ConfigPage() {
       setCommittedNodes(null);
       setWorkingNodes(null);
       setOutlineStatus("idle");
-      setOutlineError(null);
       setOutlineCommittedAt(null);
       setSelectedCanonicalIndices(new Set());
       setActiveNodeClientId(null);
+      setCommittedChunks(null);
+      setWorkingChunks(null);
+      setChunksStatus("idle");
+      
+      setSelectedChunkCanonicalIndices(new Set());
+      setActiveChunkClientId(null);
+      setActiveNodeIndexForChunk(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Commit failed. Please try again.";
       setCommitError(msg);
@@ -477,10 +583,16 @@ export default function ConfigPage() {
       setCommittedNodes(null);
       setWorkingNodes(null);
       setOutlineStatus("idle");
-      setOutlineError(null);
       setOutlineCommittedAt(null);
       setSelectedCanonicalIndices(new Set());
       setActiveNodeClientId(null);
+      setCommittedChunks(null);
+      setWorkingChunks(null);
+      setChunksStatus("idle");
+      
+      setSelectedChunkCanonicalIndices(new Set());
+      setActiveChunkClientId(null);
+      setActiveNodeIndexForChunk(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -525,6 +637,12 @@ export default function ConfigPage() {
         setWorkingNodes(committedNodes ? committedNodes.map(committedToDraft) : []);
       }
       setActiveStage("outline");
+    }
+    if (key === "chunks" && committedNodes !== null) {
+      if (workingChunks === null) {
+        setWorkingChunks(committedChunks ? committedChunks.map(chunkCommittedToDraft) : []);
+      }
+      setActiveStage("chunks");
     }
   }
 
@@ -596,14 +714,20 @@ export default function ConfigPage() {
       setCanonicalCommittedAt(result.committed_at);
       setSelectedWordIds(new Set());
       setCanonicalStatus("success");
-      // Canonical words replaced: outline nodes are now invalid
+      // Canonical words replaced: outline nodes and chunks are now invalid
       setCommittedNodes(null);
       setWorkingNodes(null);
       setOutlineStatus("idle");
-      setOutlineError(null);
       setOutlineCommittedAt(null);
       setSelectedCanonicalIndices(new Set());
       setActiveNodeClientId(null);
+      setCommittedChunks(null);
+      setWorkingChunks(null);
+      setChunksStatus("idle");
+      
+      setSelectedChunkCanonicalIndices(new Set());
+      setActiveChunkClientId(null);
+      setActiveNodeIndexForChunk(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -623,7 +747,6 @@ export default function ConfigPage() {
       next.has(canonicalIndex) ? next.delete(canonicalIndex) : next.add(canonicalIndex);
       return next;
     });
-    setAddNodeError(null);
   }
 
   function handleOutlineQuadDragEnter(canonicalIndex: number) {
@@ -643,7 +766,6 @@ export default function ConfigPage() {
       unassigned.forEach((ci) => next.add(ci));
       return next;
     });
-    setAddNodeError(null);
   }
 
   function handleAddExplicitNode() {
@@ -652,7 +774,7 @@ export default function ConfigPage() {
     // Check sequential adjacency
     for (let i = 1; i < sorted.length; i++) {
       if (sorted[i] !== sorted[i - 1] + 1) {
-        setAddNodeError("Selected quads must be sequentially adjacent in reading order.");
+        addToast("Selected quads must be sequentially adjacent in reading order.");
         return;
       }
     }
@@ -667,7 +789,7 @@ export default function ConfigPage() {
         n.endCanonicalIndex >= start,
     );
     if (overlap) {
-      setAddNodeError("Selection overlaps an existing explicit node.");
+      addToast("Selection overlaps an existing explicit node.");
       return;
     }
     const label = sorted
@@ -694,7 +816,6 @@ export default function ConfigPage() {
     }
     setWorkingNodes(newNodes);
     setSelectedCanonicalIndices(new Set());
-    setAddNodeError(null);
   }
 
   function handleAddInferredNode() {
@@ -711,16 +832,22 @@ export default function ConfigPage() {
     const newNodes = [...workingNodes, newNode];
     const err = validateHierarchy(newNodes);
     if (err) {
-      setHierarchyError(err);
+      addToast(err);
       return;
     }
     setWorkingNodes(newNodes);
     setInferredNodeForm(null);
-    setHierarchyError(null);
   }
 
   function handleDeleteNode(clientId: string) {
-    setWorkingNodes((prev) => (prev ? prev.filter((n) => n.clientId !== clientId) : prev));
+    if (!workingNodes) return;
+    const updated = workingNodes.filter((n) => n.clientId !== clientId);
+    const err = validateHierarchy(updated);
+    if (err) {
+      addToast(`Can't delete this node — it would leave child nodes in an invalid hierarchy. Delete or move child nodes first.`);
+      return;
+    }
+    setWorkingNodes(updated);
     if (activeNodeClientId === clientId) setActiveNodeClientId(null);
   }
 
@@ -734,7 +861,6 @@ export default function ConfigPage() {
       const tryLevel = levels[(currentIdx + offset) % 3];
       const updated = nodes.map((n) => n.clientId === clientId ? { ...n, headingLevel: tryLevel } : n);
       if (!validateHierarchy(updated)) {
-        setHierarchyError(null);
         setWorkingNodes(updated);
         return;
       }
@@ -742,65 +868,171 @@ export default function ConfigPage() {
     // No valid level found — stay as-is
   }
 
+  function buildHierarchyMoveError(reordered: DraftNode[], dragId: string, label: string): string {
+    const dragNode = reordered.find((n) => n.clientId === dragId);
+    const insertPos = reordered.findIndex((n) => n.clientId === dragId);
+    let hasH1 = false;
+    let hasH2 = false;
+    for (let i = 0; i < insertPos; i++) {
+      const lvl = reordered[i].headingLevel;
+      if (lvl === "h1") { hasH1 = true; hasH2 = false; }
+      else if (lvl === "h2") { hasH2 = true; }
+    }
+    const valid: HeadingLevel[] = ["h1"];
+    if (hasH1) valid.push("h2");
+    if (hasH2) valid.push("h3");
+
+    const currentLevel = dragNode?.headingLevel;
+    const levelIsValidHere = currentLevel != null && (valid as string[]).includes(currentLevel);
+
+    if (!levelIsValidHere) {
+      // The dragged node's own level is incompatible with this position.
+      const posDesc = insertPos === 0 ? "at the top of the list" : "at this position";
+      return `"${label}" (${currentLevel ?? "no level"}) can't be placed ${posDesc} — valid levels here: ${valid.join(", ")}. Change its heading level, or move it after a compatible parent node.`;
+    }
+
+    // The node's level is fine here; the conflict comes from another node in the list.
+    const rawErr = validateHierarchy(reordered);
+    return `"${label}" can be placed here as ${currentLevel}, but this move creates a hierarchy conflict elsewhere in the list: ${rawErr}. Check for h3 nodes that appear after a section boundary without an h2 in between.`;
+  }
+
   function handleNodeDragStart(e: React.DragEvent, clientId: string) {
     dragNodeClientIdRef.current = clientId;
     e.dataTransfer.effectAllowed = "move";
+    if (workingNodes) {
+      const subtree = getNodeSubtree(workingNodes, clientId);
+      setDragSubtreeIds(new Set(subtree.map((n) => n.clientId)));
+    }
   }
 
-  function handleNodeDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+  function handleNodeDragEnd() {
+    dragNodeClientIdRef.current = null;
+    setNodeDropTarget(null);
+    setDragSubtreeIds(new Set());
   }
 
-  function handleNodeDrop(e: React.DragEvent, targetClientId: string) {
-    e.preventDefault();
+  function handleDropBefore(anchorClientId: string) {
     const dragId = dragNodeClientIdRef.current;
-    if (!dragId || dragId === targetClientId || !workingNodes) return;
-    const dragNode = workingNodes.find((n) => n.clientId === dragId);
-    if (!dragNode) return;
-
-    const withoutDrag = workingNodes.filter((n) => n.clientId !== dragId);
-    const targetIndex = withoutDrag.findIndex((n) => n.clientId === targetClientId);
-    if (targetIndex === -1) return;
-    const reordered = [
-      ...withoutDrag.slice(0, targetIndex + 1),
-      dragNode,
-      ...withoutDrag.slice(targetIndex + 1),
-    ];
-    // Verify explicit node canonical ordering is preserved
-    const explicitInOrder = reordered.filter((n) => !n.isInferred);
-    const explicitSorted = [...explicitInOrder].sort(
-      (a, b) => a.startCanonicalIndex - b.startCanonicalIndex,
-    );
-    const orderOk = explicitInOrder.every((n, i) => n.clientId === explicitSorted[i].clientId);
-    if (!orderOk) {
-      setHierarchyError("Explicit nodes must remain in canonical index order.");
+    if (!dragId || !workingNodes) return;
+    const subtree = getNodeSubtree(workingNodes, dragId);
+    const subtreeIds = new Set(subtree.map((n) => n.clientId));
+    if (subtreeIds.has(anchorClientId)) return;
+    const withoutSubtree = workingNodes.filter((n) => !subtreeIds.has(n.clientId));
+    const intermediateErr = validateHierarchy(withoutSubtree);
+    if (intermediateErr) {
+      addToast(`Can't move "${subtree[0].label}" — the outline has an existing hierarchy conflict: ${intermediateErr}`);
       return;
     }
+    const anchorIdx = withoutSubtree.findIndex((n) => n.clientId === anchorClientId);
+    if (anchorIdx === -1) return;
+    const reordered = [
+      ...withoutSubtree.slice(0, anchorIdx),
+      ...subtree,
+      ...withoutSubtree.slice(anchorIdx),
+    ];
     const err = validateHierarchy(reordered);
     if (err) {
-      setHierarchyError(err);
+      addToast(buildHierarchyMoveError(reordered, dragId, subtree[0].label));
       return;
     }
-    setHierarchyError(null);
     setWorkingNodes(reordered);
     dragNodeClientIdRef.current = null;
+    setDragSubtreeIds(new Set());
+  }
+
+  function handleDropOnNode(targetClientId: string) {
+    const dragId = dragNodeClientIdRef.current;
+    if (!dragId || !workingNodes) return;
+    const subtree = getNodeSubtree(workingNodes, dragId);
+    const subtreeIds = new Set(subtree.map((n) => n.clientId));
+    if (subtreeIds.has(targetClientId)) return;
+    const targetNode = workingNodes.find((n) => n.clientId === targetClientId);
+    if (!targetNode) return;
+    const targetLevelNum = levelToNum(targetNode.headingLevel);
+    if (targetLevelNum >= 3) {
+      addToast(`Cannot reparent onto "${targetNode.label}" (h3) — children would exceed h3.`);
+      return;
+    }
+    const dragHeadLevelNum = levelToNum(subtree[0].headingLevel);
+    const newHeadLevelNum = targetLevelNum + 1;
+    const delta = newHeadLevelNum - dragHeadLevelNum;
+    for (const n of subtree) {
+      if (levelToNum(n.headingLevel) + delta > 3) {
+        addToast(`Cannot reparent onto "${targetNode.label}" — some nodes in the group would exceed h3.`);
+        return;
+      }
+    }
+    const shiftedSubtree = subtree.map((n) => ({
+      ...n,
+      headingLevel: numToLevel(levelToNum(n.headingLevel) + delta),
+    }));
+    const withoutSubtree = workingNodes.filter((n) => !subtreeIds.has(n.clientId));
+    const intermediateErr = validateHierarchy(withoutSubtree);
+    if (intermediateErr) {
+      addToast(`Can't move "${subtree[0].label}" — the outline has an existing hierarchy conflict: ${intermediateErr}`);
+      return;
+    }
+    const targetSubtree = getNodeSubtree(withoutSubtree, targetClientId);
+    const lastOfTarget = targetSubtree[targetSubtree.length - 1];
+    const insertIdx = withoutSubtree.findIndex((n) => n.clientId === lastOfTarget.clientId) + 1;
+    const reordered = [
+      ...withoutSubtree.slice(0, insertIdx),
+      ...shiftedSubtree,
+      ...withoutSubtree.slice(insertIdx),
+    ];
+    const err = validateHierarchy(reordered);
+    if (err) {
+      addToast(err);
+      return;
+    }
+    setWorkingNodes(reordered);
+    dragNodeClientIdRef.current = null;
+    setDragSubtreeIds(new Set());
+  }
+
+  function handleDropAtEnd() {
+    const dragId = dragNodeClientIdRef.current;
+    if (!dragId || !workingNodes) return;
+    const subtree = getNodeSubtree(workingNodes, dragId);
+    const subtreeIds = new Set(subtree.map((n) => n.clientId));
+    const withoutSubtree = workingNodes.filter((n) => !subtreeIds.has(n.clientId));
+    const intermediateErr = validateHierarchy(withoutSubtree);
+    if (intermediateErr) {
+      addToast(`Can't move "${subtree[0].label}" — the outline has an existing hierarchy conflict: ${intermediateErr}`);
+      return;
+    }
+    const reordered = [...withoutSubtree, ...subtree];
+    const err = validateHierarchy(reordered);
+    if (err) {
+      addToast(buildHierarchyMoveError(reordered, dragId, subtree[0].label));
+      return;
+    }
+    setWorkingNodes(reordered);
+    dragNodeClientIdRef.current = null;
+    setDragSubtreeIds(new Set());
+  }
+
+  function handleCommitNodesClick() {
+    if (workingChunks && workingChunks.length > 0) {
+      setNodesCommitWarnOpen(true);
+    } else {
+      handleCommitNodes();
+    }
   }
 
   async function handleCommitNodes() {
     if (!chatroomId || !workingNodes) return;
     const missing = workingNodes.filter((n) => !n.headingLevel);
     if (missing.length > 0) {
-      setOutlineError("All nodes must have a heading level before committing.");
+      addToast("All nodes must have a heading level before committing.");
       return;
     }
     const hierr = validateHierarchy(workingNodes);
     if (hierr) {
-      setOutlineError(hierr);
+      addToast(hierr);
       return;
     }
     setOutlineStatus("committing");
-    setOutlineError(null);
     try {
       const result = await post<NodesApiResponse>(`/nodes/${chatroomId}/commit`, {
         nodes: workingNodes.map(draftToApi),
@@ -808,6 +1040,9 @@ export default function ConfigPage() {
       setCommittedNodes(result.committed_nodes);
       setWorkingNodes(result.committed_nodes ? result.committed_nodes.map(committedToDraft) : []);
       setOutlineStatus("success");
+      // Clear working chunk assignments (node indices are now stale); committedChunks
+      // intentionally not cleared so isChunksDirty becomes true and forces a recommit.
+      setWorkingChunks((prev) => prev ? prev.map((c) => ({ ...c, assignedNodeIndex: null })) : prev);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -815,8 +1050,157 @@ export default function ConfigPage() {
           : err instanceof Error
             ? err.message
             : "Commit failed";
-      setOutlineError(msg);
+      addToast(msg);
       setOutlineStatus("error");
+    }
+  }
+
+  function handleChunkQuadClick(canonicalIndex: number) {
+    if (chunkNodeInfoMap.has(canonicalIndex)) return;
+    setSelectedChunkCanonicalIndices((prev) => {
+      const next = new Set(prev);
+      next.has(canonicalIndex) ? next.delete(canonicalIndex) : next.add(canonicalIndex);
+      return next;
+    });
+  }
+
+  function handleChunkQuadDragEnter(canonicalIndex: number) {
+    if (chunkNodeInfoMap.has(canonicalIndex)) return;
+    setSelectedChunkCanonicalIndices((prev) => {
+      const next = new Set(prev);
+      next.add(canonicalIndex);
+      return next;
+    });
+  }
+
+  function handleChunkRectSelect(canonicalIndices: number[]) {
+    const unassigned = canonicalIndices.filter((ci) => !chunkNodeInfoMap.has(ci));
+    if (unassigned.length === 0) return;
+    setSelectedChunkCanonicalIndices((prev) => {
+      const next = new Set(prev);
+      unassigned.forEach((ci) => next.add(ci));
+      return next;
+    });
+  }
+
+  function handleAddChunk(assignToNodeIndex: number | null) {
+    if (!workingChunks || selectedChunkCanonicalIndices.size === 0) return;
+    const sorted = Array.from(selectedChunkCanonicalIndices).sort((a, b) => a - b);
+    const start = sorted[0];
+    const end = sorted[sorted.length - 1];
+    const overlap = workingChunks.some(
+      (c) => c.startCanonicalIndex <= end && c.endCanonicalIndex >= start,
+    );
+    if (overlap) {
+      addToast("Selection overlaps an existing chunk.");
+      return;
+    }
+    const text = Array.from({ length: end - start + 1 }, (_, i) => start + i)
+      .map((ci) => canonicalWords[ci]?.text ?? "")
+      .filter(Boolean)
+      .join(" ");
+    const newChunk: DraftChunk = {
+      clientId: crypto.randomUUID(),
+      assignedNodeIndex: assignToNodeIndex,
+      startCanonicalIndex: start,
+      endCanonicalIndex: end,
+      text,
+    };
+    const newChunks = [...workingChunks, newChunk].sort(
+      (a, b) => a.startCanonicalIndex - b.startCanonicalIndex,
+    );
+    setWorkingChunks(newChunks);
+    setSelectedChunkCanonicalIndices(new Set());
+  }
+
+  function handleDeleteChunk(clientId: string) {
+    setWorkingChunks((prev) => (prev ? prev.filter((c) => c.clientId !== clientId) : prev));
+    if (activeChunkClientId === clientId) setActiveChunkClientId(null);
+  }
+
+  function handleChunkDragStart(e: React.DragEvent, clientId: string) {
+    dragChunkClientIdRef.current = clientId;
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleChunkDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  function handleDropOnChunkRow(e: React.DragEvent, targetClientId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    const clientId = dragChunkClientIdRef.current;
+    if (!clientId || clientId === targetClientId || !workingChunks) return;
+    const dragChunk = workingChunks.find((c) => c.clientId === clientId);
+    const targetChunk = workingChunks.find((c) => c.clientId === targetClientId);
+    if (!dragChunk || !targetChunk) return;
+    const withoutDrag = workingChunks.filter((c) => c.clientId !== clientId);
+    const targetIdx = withoutDrag.findIndex((c) => c.clientId === targetClientId);
+    if (targetIdx === -1) return;
+    const reordered = [
+      ...withoutDrag.slice(0, targetIdx),
+      { ...dragChunk, assignedNodeIndex: targetChunk.assignedNodeIndex },
+      ...withoutDrag.slice(targetIdx),
+    ];
+    setWorkingChunks(reordered);
+    dragChunkClientIdRef.current = null;
+  }
+
+  function handleDropOnNodeBucket(e: React.DragEvent, nodeIndex: number) {
+    e.preventDefault();
+    const clientId = dragChunkClientIdRef.current;
+    if (!clientId || !workingChunks) return;
+    const dragChunk = workingChunks.find((c) => c.clientId === clientId);
+    if (!dragChunk) return;
+    const withoutDrag = workingChunks.filter((c) => c.clientId !== clientId);
+    const bucketChunks = withoutDrag.filter((c) => c.assignedNodeIndex === nodeIndex);
+    const lastInBucket = bucketChunks[bucketChunks.length - 1];
+    const insertIdx = lastInBucket
+      ? withoutDrag.findIndex((c) => c.clientId === lastInBucket.clientId) + 1
+      : withoutDrag.length;
+    const reordered = [
+      ...withoutDrag.slice(0, insertIdx),
+      { ...dragChunk, assignedNodeIndex: nodeIndex },
+      ...withoutDrag.slice(insertIdx),
+    ];
+    setWorkingChunks(reordered);
+    dragChunkClientIdRef.current = null;
+  }
+
+  function handleDropOnUnassignedBucket(e: React.DragEvent) {
+    e.preventDefault();
+    const clientId = dragChunkClientIdRef.current;
+    if (!clientId || !workingChunks) return;
+    const dragChunk = workingChunks.find((c) => c.clientId === clientId);
+    if (!dragChunk) return;
+    const withoutDrag = workingChunks.filter((c) => c.clientId !== clientId);
+    setWorkingChunks([...withoutDrag, { ...dragChunk, assignedNodeIndex: null }]);
+    dragChunkClientIdRef.current = null;
+  }
+
+  async function handleCommitChunks() {
+    if (!chatroomId || !workingChunks) return;
+    setChunksStatus("committing");
+    
+    try {
+      const result = await post<{ committed_chunks: ChunkItemApi[] | null }>(
+        `/chunks/${chatroomId}/commit`,
+        { chunks: workingChunks.map((c, i) => chunkDraftToApi(c, i)) },
+      );
+      setCommittedChunks(result.committed_chunks ?? []);
+      setWorkingChunks(result.committed_chunks ? result.committed_chunks.map(chunkCommittedToDraft) : []);
+      setChunksStatus("success");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Commit failed";
+      addToast(msg);
+      setChunksStatus("error");
     }
   }
 
@@ -889,24 +1273,28 @@ export default function ConfigPage() {
                 const isRaw = stage.key === "raw_words";
                 const isCanonical = stage.key === "canonical_words";
                 const isOutline = stage.key === "outline";
+                const isChunks = stage.key === "chunks";
                 const hasCommittedCanonical = committedCanonicalWordIds !== null;
                 const clickable =
                   isPdf ||
                   (isRaw && (hasSourcePdf || hasCommittedRawWords)) ||
                   (isCanonical && hasCommittedRawWords) ||
-                  (isOutline && hasCommittedCanonical);
+                  (isOutline && hasCommittedCanonical) ||
+                  (isChunks && committedNodes !== null);
                 const isActive = stage.key === activeStage;
                 const committedClass =
                   (isPdf && committedDoc) ||
                   (isRaw && hasCommittedRawWords && !hasGeneratedRawWords) ||
                   (isCanonical && hasCommittedCanonical && !isCanonicalDirty) ||
-                  (isOutline && committedNodes !== null && !isOutlineDirty)
+                  (isOutline && committedNodes !== null && !isOutlineDirty) ||
+                  (isChunks && committedChunks !== null && !isChunksDirty)
                     ? "chip-committed"
                     : "";
                 const generatedClass =
                   (isRaw && hasGeneratedRawWords) ||
                   (isCanonical && isCanonicalDirty && workingIncludedIds !== null) ||
-                  (isOutline && isOutlineDirty)
+                  (isOutline && isOutlineDirty) ||
+                  (isChunks && isChunksDirty)
                     ? "chip-generated"
                     : "";
                 const disabledClass = clickable ? "chip-active" : "chip-disabled";
@@ -986,6 +1374,23 @@ export default function ConfigPage() {
                         {outlineCommittedAt ? ` · ${formatDate(outlineCommittedAt)}` : ""}
                       </span>
                     )}
+                    {isChunks && committedNodes === null && (
+                      <span className="stage-helper-text">Complete Outline first</span>
+                    )}
+                    {isChunks && committedNodes !== null && committedChunks === null && !isChunksDirty && (
+                      <span className="chip-status">Not started</span>
+                    )}
+                    {isChunks && committedNodes !== null && isChunksDirty && (
+                      <span className="chip-status">Unsaved changes</span>
+                    )}
+                    {isChunks && committedNodes !== null && committedChunks !== null && !isChunksDirty && (
+                      <span className="chip-status">Committed</span>
+                    )}
+                    {isChunks && committedChunks !== null && (
+                      <span className="chip-meta">
+                        {committedChunks.length} chunk{committedChunks.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
                   </li>
                 );
               })}
@@ -993,7 +1398,7 @@ export default function ConfigPage() {
           </div>
 
           {/* Middle — Action Panel */}
-          <div className={`action-panel${activeStage === "outline" ? " action-panel--wide" : ""}`}>
+          <div className={`action-panel${(activeStage === "outline" || activeStage === "chunks") ? " action-panel--wide" : ""}${activeStage === "chunks" && workingChunks !== null && committedNodes !== null ? " action-panel--split" : ""}`}>
             {activeStage === "pdf_upload" && (
               <>
                 <h2 className="panel-heading">PDF Upload</h2>
@@ -1140,6 +1545,154 @@ export default function ConfigPage() {
               </>
             )}
 
+            {activeStage === "chunks" && workingChunks !== null && committedNodes !== null && (
+              <div className="chunks-panel-inner">
+                <div className="chunks-panel-header">
+                  <h2 className="panel-heading">Chunk Assignment</h2>
+                  <p className="action-status-banner">
+                    {chunksStatus === "committing" && "Committing…"}
+                    {chunksStatus === "success" && "Committed."}
+                    {chunksStatus === "error" && "Something went wrong."}
+                    {chunksStatus === "idle" && (
+                      isChunksDirty
+                        ? "Unsaved changes."
+                        : committedChunks !== null
+                          ? "Committed."
+                          : "No chunks yet. Select quads to add a chunk."
+                    )}
+                  </p>
+                  <div className="canonical-count-row">
+                    <span><span className="canonical-count-label">Total </span>{workingChunks.length}</span>
+                    <span><span className="canonical-count-label">Assigned </span>{workingChunks.filter((c) => c.assignedNodeIndex !== null).length}</span>
+                    <span><span className="canonical-count-label">Unassigned </span>{workingChunks.filter((c) => c.assignedNodeIndex === null).length}</span>
+                  </div>
+                  {selectedChunkCanonicalIndices.size > 0 && (
+                    <div className="outline-add-node-row">
+                      <button
+                        className="commit-btn commit-btn-secondary"
+                        onClick={() => handleAddChunk(null)}
+                      >
+                        Add as unassigned chunk ({selectedChunkCanonicalIndices.size} word{selectedChunkCanonicalIndices.size !== 1 ? "s" : ""})
+                      </button>
+                      {activeNodeIndexForChunk !== null && (
+                        <button
+                          className="commit-btn commit-btn-secondary"
+                          onClick={() => handleAddChunk(activeNodeIndexForChunk)}
+                        >
+                          Add to {committedNodes[activeNodeIndexForChunk]?.label ?? `node ${activeNodeIndexForChunk}`}
+                        </button>
+                      )}
+                      <button
+                        className="commit-btn commit-btn-secondary"
+                        onClick={() => setSelectedChunkCanonicalIndices(new Set())}
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="chunks-scrollable-area" ref={dividerContainerRef}>
+                  <div className="chunks-top-scroll" style={{ flex: chunksPanelSplit }}>
+                    {committedNodes.map((node, nodeIndex) => {
+                      const nodeChunks = workingChunks.filter((c) => c.assignedNodeIndex === nodeIndex);
+                      const isActiveBucket = activeNodeIndexForChunk === nodeIndex;
+                      return (
+                        <div
+                          key={nodeIndex}
+                          className={`chunk-node-bucket${isActiveBucket ? " chunk-node-bucket--active" : ""}`}
+                          onDragOver={handleChunkDragOver}
+                          onDrop={(e) => handleDropOnNodeBucket(e, nodeIndex)}
+                        >
+                          <div
+                            className="chunk-bucket-header"
+                            onClick={() => setActiveNodeIndexForChunk(isActiveBucket ? null : nodeIndex)}
+                          >
+                            <button className={`outline-level-btn outline-level-btn--${node.node_type}`}>{node.node_type}</button>
+                            {node.start_canonical_index === 0 && node.end_canonical_index === 0 && (
+                              <span className="outline-type-chip outline-type-chip--inferred">I</span>
+                            )}
+                            <span className="chunk-bucket-label" title={node.label}>{node.label}</span>
+                            <span className="chunk-bucket-count">({nodeChunks.length})</span>
+                          </div>
+                          {nodeChunks.map((chunk) => (
+                            <div
+                              key={chunk.clientId}
+                              className="chunk-row"
+                              draggable
+                              onDragStart={(e) => handleChunkDragStart(e, chunk.clientId)}
+                              onDragOver={handleChunkDragOver}
+                              onDrop={(e) => handleDropOnChunkRow(e, chunk.clientId)}
+                              onClick={() => setActiveChunkClientId(activeChunkClientId === chunk.clientId ? null : chunk.clientId)}
+                            >
+                              <span className="outline-drag-handle">⠿</span>
+                              <span className="chunk-preview" title={chunk.text}>{chunk.text}</span>
+                              <span className="chunk-range">{chunk.startCanonicalIndex}–{chunk.endCanonicalIndex}</span>
+                              <button
+                                className="outline-delete-btn"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteChunk(chunk.clientId); }}
+                                title="Delete chunk"
+                              >✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    className="chunks-panel-divider"
+                    onMouseDown={(e) => { e.preventDefault(); isDividerDraggingRef.current = true; }}
+                  >
+                    <span className="chunks-panel-divider-handle">⠿</span>
+                  </div>
+
+                  <div className="chunks-bottom-scroll" style={{ flex: 100 - chunksPanelSplit }}>
+                    <div
+                      className="chunk-unassigned-bucket"
+                      onDragOver={handleChunkDragOver}
+                      onDrop={handleDropOnUnassignedBucket}
+                    >
+                      <div className="chunk-bucket-header">
+                        <span className="chunk-bucket-label">Unassigned</span>
+                        <span className="chunk-bucket-count">({workingChunks.filter((c) => c.assignedNodeIndex === null).length})</span>
+                      </div>
+                      {workingChunks.filter((c) => c.assignedNodeIndex === null).map((chunk) => (
+                        <div
+                          key={chunk.clientId}
+                          className="chunk-row"
+                          draggable
+                          onDragStart={(e) => handleChunkDragStart(e, chunk.clientId)}
+                          onDragOver={handleChunkDragOver}
+                          onDrop={(e) => handleDropOnChunkRow(e, chunk.clientId)}
+                          onClick={() => setActiveChunkClientId(activeChunkClientId === chunk.clientId ? null : chunk.clientId)}
+                        >
+                          <span className="outline-drag-handle">⠿</span>
+                          <span className="chunk-preview" title={chunk.text}>{chunk.text}</span>
+                          <span className="chunk-range">{chunk.startCanonicalIndex}–{chunk.endCanonicalIndex}</span>
+                          <button
+                            className="outline-delete-btn"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteChunk(chunk.clientId); }}
+                            title="Delete chunk"
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="chunks-panel-footer">
+                  <button
+                    className="commit-btn"
+                    onClick={handleCommitChunks}
+                    disabled={!isChunksDirty || chunksStatus === "committing"}
+                  >
+                    {chunksStatus === "committing" ? "Committing…" : "Commit Chunks"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {activeStage === "outline" && workingNodes !== null && (
               <>
                 <h2 className="panel-heading">Outline Generation</h2>
@@ -1170,13 +1723,10 @@ export default function ConfigPage() {
                     </button>
                     <button
                       className="commit-btn commit-btn-secondary"
-                      onClick={() => { setSelectedCanonicalIndices(new Set()); setAddNodeError(null); }}
+                      onClick={() => setSelectedCanonicalIndices(new Set())}
                     >
                       Clear selection
                     </button>
-                    {addNodeError && (
-                      <p className="commit-error" role="alert">{addNodeError}</p>
-                    )}
                   </div>
                 )}
                 <button
@@ -1216,65 +1766,78 @@ export default function ConfigPage() {
                       </button>
                       <button
                         className="commit-btn commit-btn-secondary"
-                        onClick={() => { setInferredNodeForm(null); setHierarchyError(null); }}
+                        onClick={() => setInferredNodeForm(null)}
                       >
                         Cancel
                       </button>
                     </div>
-                    {hierarchyError && (
-                      <p className="commit-error" role="alert">{hierarchyError}</p>
-                    )}
                   </div>
                 )}
                 {workingNodes.length > 0 && (
-                  <ul className="outline-node-list">
+                  <div
+                    className="outline-node-list"
+                    role="list"
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) setNodeDropTarget(null);
+                    }}
+                  >
                     {workingNodes.map((node) => {
                       const indent = node.headingLevel === "h1" ? 0 : node.headingLevel === "h2" ? 1 : 2;
                       const isActive = node.clientId === activeNodeClientId;
+                      const isBeforeTarget = nodeDropTarget?.type === "before" && nodeDropTarget.anchorId === node.clientId;
+                      const isOnTarget = nodeDropTarget?.type === "on" && nodeDropTarget.targetId === node.clientId && !dragSubtreeIds.has(node.clientId);
+                      const isDraggingSubtree = dragSubtreeIds.has(node.clientId);
                       return (
-                        <li
-                          key={node.clientId}
-                          className={`outline-node-row ${isActive ? "outline-node-row--active" : ""}`}
-                          style={{ paddingLeft: `${indent * 0.875 + 0.5}rem` }}
-                          draggable
-                          onDragStart={(e) => handleNodeDragStart(e, node.clientId)}
-                          onDragOver={(e) => handleNodeDragOver(e)}
-                          onDrop={(e) => handleNodeDrop(e, node.clientId)}
-                          onClick={() => setActiveNodeClientId(isActive ? null : node.clientId)}
-                        >
-                          <span className="outline-drag-handle" title="Drag to reorder">⠿</span>
-                          <button
-                            className={`outline-level-btn outline-level-btn--${node.headingLevel ?? "none"}`}
-                            title="Click to cycle heading level"
-                            onClick={(e) => { e.stopPropagation(); handleCycleHeadingLevel(node.clientId); }}
+                        <React.Fragment key={node.clientId}>
+                          <div
+                            className={`outline-drop-zone${isBeforeTarget ? " outline-drop-zone--active" : ""}`}
+                            onDragOver={(e) => { e.preventDefault(); setNodeDropTarget({ type: "before", anchorId: node.clientId }); }}
+                            onDrop={(e) => { e.preventDefault(); handleDropBefore(node.clientId); setNodeDropTarget(null); }}
+                          />
+                          <div
+                            role="listitem"
+                            className={`outline-node-row${isActive ? " outline-node-row--active" : ""}${isOnTarget ? " outline-node-row--on-target" : ""}${isDraggingSubtree ? " outline-node-row--dragging" : ""}`}
+                            style={{ paddingLeft: `${indent * 0.875 + 0.5}rem` }}
+                            draggable
+                            onDragStart={(e) => handleNodeDragStart(e, node.clientId)}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!dragSubtreeIds.has(node.clientId)) setNodeDropTarget({ type: "on", targetId: node.clientId }); }}
+                            onDragEnd={handleNodeDragEnd}
+                            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDropOnNode(node.clientId); setNodeDropTarget(null); }}
+                            onClick={() => setActiveNodeClientId(isActive ? null : node.clientId)}
                           >
-                            {node.headingLevel ?? "—"}
-                          </button>
-                          {node.isInferred && (
-                            <span className="outline-type-chip outline-type-chip--inferred">I</span>
-                          )}
-                          <span className="outline-node-label" title={node.label}>{node.label}</span>
-                          <button
-                            className="outline-delete-btn"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.clientId); }}
-                            title="Delete node"
-                          >
-                            ✕
-                          </button>
-                        </li>
+                            <span className="outline-drag-handle" title="Drag to reorder">⠿</span>
+                            <button
+                              className={`outline-level-btn outline-level-btn--${node.headingLevel ?? "none"}`}
+                              title="Click to cycle heading level"
+                              onClick={(e) => { e.stopPropagation(); handleCycleHeadingLevel(node.clientId); }}
+                            >
+                              {node.headingLevel ?? "—"}
+                            </button>
+                            {node.isInferred && (
+                              <span className="outline-type-chip outline-type-chip--inferred">I</span>
+                            )}
+                            <span className="outline-node-label" title={node.label}>{node.label}</span>
+                            <button
+                              className="outline-delete-btn"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.clientId); }}
+                              title="Delete node"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </React.Fragment>
                       );
                     })}
-                  </ul>
-                )}
-                {hierarchyError && !inferredNodeForm && (
-                  <p className="commit-error" role="alert">{hierarchyError}</p>
-                )}
-                {outlineError && (
-                  <p className="commit-error" role="alert">{outlineError}</p>
+                    <div
+                      className={`outline-drop-zone outline-drop-zone--end${nodeDropTarget?.type === "end" ? " outline-drop-zone--active" : ""}`}
+                      onDragOver={(e) => { e.preventDefault(); setNodeDropTarget({ type: "end" }); }}
+                      onDrop={(e) => { e.preventDefault(); handleDropAtEnd(); setNodeDropTarget(null); }}
+                    />
+                  </div>
                 )}
                 <button
                   className="commit-btn"
-                  onClick={handleCommitNodes}
+                  onClick={handleCommitNodesClick}
                   disabled={outlineStatus === "committing" || workingNodes.length === 0}
                 >
                   {outlineStatus === "committing" ? "Committing…" : "Commit Outline"}
@@ -1371,6 +1934,52 @@ export default function ConfigPage() {
                 ) : (
                   <div className="pdf-empty-state">
                     <p>Complete Canonical Words first.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeStage === "chunks" && (
+              <div
+                className="raw-words-viewer"
+                onMouseMove={(e) => setChunkMousePos({ x: e.clientX, y: e.clientY })}
+                onMouseLeave={() => { setChunkMousePos(null); setHoveredChunkCanonicalIndex(null); }}
+              >
+                <div className="outline-zoom-controls">
+                  <button
+                    className="outline-zoom-btn"
+                    onClick={() => setChunkZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))}
+                    title="Zoom in"
+                  >+</button>
+                  <span className="outline-zoom-label">{Math.round(chunkZoom * 100)}%</span>
+                  <button
+                    className="outline-zoom-btn"
+                    onClick={() => setChunkZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+                    title="Zoom out"
+                  >−</button>
+                </div>
+                {workingChunks !== null && committedRawWords && committedCanonicalWordIds !== null && committedNodes !== null ? (
+                  <ChunksOverlay
+                    rawWordsPayload={committedRawWords}
+                    canonicalWords={canonicalWords}
+                    draftChunks={workingChunks}
+                    committedNodes={committedNodes}
+                    selectedCanonicalIndices={selectedChunkCanonicalIndices}
+                    activeChunkClientId={activeChunkClientId}
+                    getPageImageUrl={
+                      committedDoc
+                        ? (pageNum) => `${API_BASE}/config/${chatroomSlug}/page-image/${pageNum}`
+                        : null
+                    }
+                    zoomLevel={chunkZoom}
+                    onQuadClick={handleChunkQuadClick}
+                    onQuadDragEnter={handleChunkQuadDragEnter}
+                    onRectSelect={handleChunkRectSelect}
+                    onHover={setHoveredChunkCanonicalIndex}
+                  />
+                ) : (
+                  <div className="pdf-empty-state">
+                    <p>Complete Outline first.</p>
                   </div>
                 )}
               </div>
@@ -1480,6 +2089,80 @@ export default function ConfigPage() {
         </div>
       )}
 
+      {/* Chunks hover tooltip */}
+      {activeStage === "chunks" && hoveredChunkCanonicalIndex !== null && chunkMousePos && canonicalWords.length > 0 && (
+        <div
+          className="canonical-tooltip"
+          style={{ left: chunkMousePos.x + 14, top: chunkMousePos.y + 14 }}
+          role="status"
+        >
+          {(() => {
+            const word = canonicalWords[hoveredChunkCanonicalIndex];
+            const chunkInfo = chunkNodeInfoMap.get(hoveredChunkCanonicalIndex);
+            const nodeRangeInfo = chunkNodeRangeInfoMap.get(hoveredChunkCanonicalIndex);
+            const nodeIdx = chunkInfo?.chunk.assignedNodeIndex ?? null;
+            const assignedNode = nodeIdx !== null && committedNodes ? committedNodes[nodeIdx] ?? null : null;
+            const displayChunkIndex = chunkInfo ? chunkClientIdToDisplayIndex.get(chunkInfo.chunk.clientId) : undefined;
+            return (
+              <>
+                <div className="canonical-tooltip-text">{word?.text ?? "—"}</div>
+                <div className="canonical-tooltip-row">
+                  <span className="canonical-tooltip-label">Canonical #</span>
+                  <span>{hoveredChunkCanonicalIndex}</span>
+                </div>
+                {chunkInfo ? (
+                  <>
+                    <div className="canonical-tooltip-row">
+                      <span className="canonical-tooltip-label">Chunk #</span>
+                      <span>{displayChunkIndex !== undefined ? displayChunkIndex : "—"}</span>
+                    </div>
+                    <div className="canonical-tooltip-row">
+                      <span className="canonical-tooltip-label">Canonical range</span>
+                      <span>{chunkInfo.chunk.startCanonicalIndex}–{chunkInfo.chunk.endCanonicalIndex}</span>
+                    </div>
+                    {assignedNode ? (
+                      <div className="canonical-tooltip-row">
+                        <span className="canonical-tooltip-label">Node</span>
+                        <span>{assignedNode.label} ({assignedNode.node_type})</span>
+                      </div>
+                    ) : (
+                      <div className="canonical-tooltip-row">
+                        <span className="canonical-tooltip-label">Node</span>
+                        <span>unassigned</span>
+                      </div>
+                    )}
+                  </>
+                ) : nodeRangeInfo ? (
+                  <>
+                    <div className="canonical-tooltip-row">
+                      <span className="canonical-tooltip-label">Node #</span>
+                      <span>{nodeRangeInfo.nodeIndex}</span>
+                    </div>
+                    <div className="canonical-tooltip-row">
+                      <span className="canonical-tooltip-label">Header</span>
+                      <span>{nodeRangeInfo.nodeType}</span>
+                    </div>
+                    <div className="canonical-tooltip-row">
+                      <span className="canonical-tooltip-label">Node</span>
+                      <span>{nodeRangeInfo.label}</span>
+                    </div>
+                    <div className="canonical-tooltip-row">
+                      <span className="canonical-tooltip-label">Chunk</span>
+                      <span>not yet chunked</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="canonical-tooltip-row">
+                    <span className="canonical-tooltip-label">Chunk</span>
+                    <span>unassigned</span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Commit confirmation modal */}
       {commitModalOpen && (
         <div className="modal-overlay" role="dialog" aria-modal="true">
@@ -1571,6 +2254,48 @@ export default function ConfigPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Nodes commit warning modal (chunk assignments will be cleared) */}
+      {nodesCommitWarnOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-header">
+              <h2>Commit outline?</h2>
+            </div>
+            <div className="modal-body">
+              <p className="modal-warning">
+                This will re-commit the outline and clear all chunk node assignments. Chunks will be preserved but become unassigned.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-cancel-btn" onClick={() => setNodesCommitWarnOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="modal-confirm-btn"
+                onClick={() => {
+                  setNodesCommitWarnOpen(false);
+                  handleCommitNodes();
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div className="toast-container" role="alert" aria-live="polite">
+          {toasts.map((toast) => (
+            <div key={toast.id} className="toast">
+              <span className="toast-message">{toast.message}</span>
+              <button className="toast-dismiss" onClick={() => dismissToast(toast.id)} aria-label="Dismiss">✕</button>
+            </div>
+          ))}
         </div>
       )}
 

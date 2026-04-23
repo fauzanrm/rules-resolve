@@ -192,6 +192,8 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
         purge_canonical_words(doc_id)
         from routers.nodes import purge_nodes
         purge_nodes(doc_id)
+        from routers.chunks import purge_chunks
+        purge_chunks(doc_id)
         if old_file_name and old_file_name != file.filename:
             try:
                 supabase.storage.from_("chatroom-assets").remove(

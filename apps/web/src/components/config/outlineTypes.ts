@@ -46,6 +46,37 @@ export function draftToApi(node: DraftNode) {
   };
 }
 
+export function levelToNum(level: HeadingLevel | null): number {
+  if (level === "h1") return 1;
+  if (level === "h2") return 2;
+  if (level === "h3") return 3;
+  return 0;
+}
+
+export function numToLevel(n: number): HeadingLevel | null {
+  if (n === 1) return "h1";
+  if (n === 2) return "h2";
+  if (n === 3) return "h3";
+  return null;
+}
+
+export function getNodeSubtree(nodes: DraftNode[], headId: string): DraftNode[] {
+  const headIdx = nodes.findIndex((n) => n.clientId === headId);
+  if (headIdx === -1) return [];
+  const head = nodes[headIdx];
+  const headLevel = levelToNum(head.headingLevel);
+  if (headLevel === 0) return [head];
+  const result: DraftNode[] = [head];
+  for (let i = headIdx + 1; i < nodes.length; i++) {
+    if (levelToNum(nodes[i].headingLevel) > headLevel) {
+      result.push(nodes[i]);
+    } else {
+      break;
+    }
+  }
+  return result;
+}
+
 export function validateHierarchy(nodes: DraftNode[]): string | null {
   let hasH1 = false;
   let hasH2 = false;

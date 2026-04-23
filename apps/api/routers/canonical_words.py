@@ -227,6 +227,8 @@ def commit_canonical_words(chatroom_id: int, body: CommitRequest):
 
     from routers.nodes import purge_nodes
     purge_nodes(document_id)
+    from routers.chunks import purge_chunks
+    purge_chunks(document_id)
 
     return CanonicalWordsState(
         chatroom_id=chatroom_id,

@@ -150,16 +150,15 @@ def test_commit_replaces_prior_nodes(mock_conn):
 # ── COMMIT — validation errors ─────────────────────────────────────────────────
 
 @patch("routers.nodes.get_connection")
-def test_commit_blocks_non_sequential_explicit_order(mock_conn):
+def test_commit_allows_non_sequential_explicit_order(mock_conn):
     cur = MagicMock()
     cur.fetchone.side_effect = [(1,), (7,)]
     mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
 
-    # Higher canonical index submitted first (wrong order)
+    # Non-sequential canonical order is now allowed (user may reorder freely)
     nodes = [_h1("Later", 50, 55), _h1("Earlier", 10, 15)]
     r = client.post("/nodes/1/commit", json={"nodes": nodes})
-    assert r.status_code == 400
-    assert "order" in r.json()["detail"].lower()
+    assert r.status_code == 200
 
 
 @patch("routers.nodes.get_connection")
