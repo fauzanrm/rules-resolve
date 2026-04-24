@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 import io
+import threading
 
 import fitz
 from fastapi import APIRouter, HTTPException, UploadFile, File
@@ -17,6 +18,7 @@ from routers.canonical_words import purge_canonical_words
 router = APIRouter()
 
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+_render_semaphore = threading.Semaphore(3)
 
 
 class DocumentMeta(BaseModel):
@@ -276,18 +278,19 @@ def get_page_image(chatroom_slug: str, page_num: int):
     except Exception:
         raise HTTPException(status_code=404, detail="PDF not found in storage")
 
-    try:
-        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        if page_num < 1 or page_num > len(pdf_doc):
-            raise HTTPException(status_code=400, detail="Invalid page number")
-        page = pdf_doc[page_num - 1]
-        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-        png_bytes = pix.tobytes("png")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to render page: {e}")
-    finally:
-        pdf_doc.close()
+    with _render_semaphore:
+        try:
+            pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            if page_num < 1 or page_num > len(pdf_doc):
+                raise HTTPException(status_code=400, detail="Invalid page number")
+            page = pdf_doc[page_num - 1]
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            png_bytes = pix.tobytes("png")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to render page: {e}")
+        finally:
+            pdf_doc.close()
 
     return Response(content=png_bytes, media_type="image/png")

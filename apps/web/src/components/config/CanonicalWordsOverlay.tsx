@@ -182,6 +182,7 @@ export default function CanonicalWordsOverlay({
                 <img
                   src={imageUrl}
                   alt={`Page ${page.page}`}
+                  loading="lazy"
                   style={{
                     position: "absolute",
                     inset: 0,

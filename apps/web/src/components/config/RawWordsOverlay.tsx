@@ -71,6 +71,7 @@ export default function RawWordsOverlay({ payload, variant, getPageImageUrl, onH
                 <img
                   src={imageUrl}
                   alt={`Page ${page.page}`}
+                  loading="lazy"
                   style={{
                     position: "absolute",
                     inset: 0,

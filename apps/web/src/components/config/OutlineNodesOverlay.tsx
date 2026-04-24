@@ -217,6 +217,7 @@ export default function OutlineNodesOverlay({
                 <img
                   src={imageUrl}
                   alt={`Page ${page.page}`}
+                  loading="lazy"
                   style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }}
                   draggable={false}
                   onLoad={(e) => handleImageLoad(page.page, e)}
