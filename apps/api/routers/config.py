@@ -284,7 +284,7 @@ def get_page_image(chatroom_slug: str, page_num: int):
             if page_num < 1 or page_num > len(pdf_doc):
                 raise HTTPException(status_code=400, detail="Invalid page number")
             page = pdf_doc[page_num - 1]
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             png_bytes = pix.tobytes("png")
         except HTTPException:
             raise
