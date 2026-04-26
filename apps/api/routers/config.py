@@ -19,6 +19,32 @@ router = APIRouter()
 
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 _render_semaphore = threading.Semaphore(3)
+_pdf_cache: dict[tuple, bytes] = {}
+_pdf_cache_lock = threading.Lock()
+_PDF_CACHE_MAX = 5
+
+
+def _get_cached_pdf(supabase, chatroom_id: int, doc_id: int, file_name: str) -> bytes:
+    key = (chatroom_id, doc_id, file_name)
+    with _pdf_cache_lock:
+        cached = _pdf_cache.get(key)
+    if cached is not None:
+        return cached
+    pdf_bytes = supabase.storage.from_(BUCKET).download(
+        f"{chatroom_id}/documents/{doc_id}/source/{file_name}"
+    )
+    with _pdf_cache_lock:
+        if len(_pdf_cache) >= _PDF_CACHE_MAX:
+            _pdf_cache.clear()
+        _pdf_cache[key] = pdf_bytes
+    return pdf_bytes
+
+
+def _invalidate_pdf_cache(chatroom_id: int, doc_id: int) -> None:
+    with _pdf_cache_lock:
+        keys = [k for k in _pdf_cache if k[0] == chatroom_id and k[1] == doc_id]
+        for k in keys:
+            del _pdf_cache[k]
 
 
 class DocumentMeta(BaseModel):
@@ -214,6 +240,8 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
         except Exception:
             raise HTTPException(status_code=500, detail="Failed to upload PDF to storage")
 
+        _invalidate_pdf_cache(chatroom_id, doc_id)
+
         if cover_bytes:
             source_prefix = f"{chatroom_id}/documents/{doc_id}/source"
             existing = supabase.storage.from_(BUCKET).list(source_prefix)
@@ -271,14 +299,12 @@ def get_page_image(chatroom_slug: str, page_num: int):
     if not supabase:
         raise HTTPException(status_code=500, detail="Storage not configured")
 
-    try:
-        pdf_bytes = supabase.storage.from_(BUCKET).download(
-            f"{chatroom_id}/documents/{doc_id}/source/{file_name}"
-        )
-    except Exception:
-        raise HTTPException(status_code=404, detail="PDF not found in storage")
-
     with _render_semaphore:
+        try:
+            pdf_bytes = _get_cached_pdf(supabase, chatroom_id, doc_id, file_name)
+        except Exception:
+            raise HTTPException(status_code=404, detail="PDF not found in storage")
+
         try:
             pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             if page_num < 1 or page_num > len(pdf_doc):
