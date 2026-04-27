@@ -96,6 +96,29 @@ const emptyCanonicalState = {
   committed_at: null,
 };
 
+const emptyNodesState = {
+  chatroom_id: 1,
+  document_id: 7,
+  has_canonical_words: false,
+  committed_nodes: null,
+};
+
+const emptyChunksState = {
+  chatroom_id: 1,
+  document_id: 7,
+  has_nodes: false,
+  committed_chunks: null,
+};
+
+const emptyEmbeddingsState = {
+  chatroom_id: 1,
+  document_id: null,
+  has_committed_chunks: false,
+  committed_chunk_count: 0,
+  stored_embedding_count: 0,
+  missing_count: 0,
+};
+
 function mockInitialLoad(
   { hasPdf, committed }: { hasPdf: boolean; committed?: typeof samplePayload | null } = {
     hasPdf: true,
@@ -113,12 +136,15 @@ function mockInitialLoad(
         ? { ...committed, status: "committed", committed_at: "2026-04-18T10:00:00Z" }
         : null,
     })
-    .mockResolvedValueOnce(emptyCanonicalState);
+    .mockResolvedValueOnce(emptyCanonicalState)
+    .mockResolvedValueOnce(emptyNodesState)
+    .mockResolvedValueOnce(emptyChunksState)
+    .mockResolvedValueOnce(emptyEmbeddingsState);
 }
 
 async function renderAndLoad() {
   render(<ConfigPage />);
-  await waitFor(() => expect(apiLib.get).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(apiLib.get).toHaveBeenCalledTimes(6));
 }
 
 // 1. Committed raw words load on mount

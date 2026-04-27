@@ -94,8 +94,7 @@ def test_get_chatroom_not_found(mock_conn):
 @patch("routers.chunks.get_connection")
 def test_commit_happy_path_assigned(mock_conn):
     cur = MagicMock()
-    cur.fetchone.side_effect = [(1,), (7,)]
-    cur.fetchall.return_value = [(0,)]  # valid node_index = 0
+    cur.fetchone.side_effect = [(1,), (7,), (1,)]  # chatroom, doc_id, node_count=1
     mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
 
     r = client.post("/chunks/1/commit", json={"chunks": [_chunk(assigned_node_id=0)]})
@@ -161,8 +160,7 @@ def test_commit_start_greater_than_end(mock_conn):
 @patch("routers.chunks.get_connection")
 def test_commit_invalid_assigned_node_id(mock_conn):
     cur = MagicMock()
-    cur.fetchone.side_effect = [(1,), (7,)]
-    cur.fetchall.return_value = [(0,), (1,)]  # valid node indices are 0 and 1
+    cur.fetchone.side_effect = [(1,), (7,), (2,)]  # chatroom, doc_id, node_count=2 (valid indices: 0,1)
     mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
 
     r = client.post("/chunks/1/commit", json={"chunks": [_chunk(assigned_node_id=99)]})

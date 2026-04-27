@@ -93,16 +93,42 @@ beforeEach(() => {
   (authLib.getSession as jest.Mock).mockReturnValue(adminSession);
 });
 
+const emptyNodesState = {
+  chatroom_id: 1,
+  document_id: 7,
+  has_canonical_words: true,
+  committed_nodes: null,
+};
+
+const emptyChunksState = {
+  chatroom_id: 1,
+  document_id: 7,
+  has_nodes: false,
+  committed_chunks: null,
+};
+
+const emptyEmbeddingsState = {
+  chatroom_id: 1,
+  document_id: null,
+  has_committed_chunks: false,
+  committed_chunk_count: 0,
+  stored_embedding_count: 0,
+  missing_count: 0,
+};
+
 function mockLoad(canonicalState = emptyCanonicalState) {
   (apiLib.get as jest.Mock)
     .mockResolvedValueOnce(configWithDoc)
     .mockResolvedValueOnce(rawWordsState)
-    .mockResolvedValueOnce(canonicalState);
+    .mockResolvedValueOnce(canonicalState)
+    .mockResolvedValueOnce(emptyNodesState)
+    .mockResolvedValueOnce(emptyChunksState)
+    .mockResolvedValueOnce(emptyEmbeddingsState);
 }
 
 async function renderAndLoad() {
   render(<ConfigPage />);
-  await waitFor(() => expect(apiLib.get).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(apiLib.get).toHaveBeenCalledTimes(6));
 }
 
 async function openCanonicalStage() {
@@ -338,7 +364,10 @@ test("word selection uses word_id not text (handles duplicate text correctly)", 
   (apiLib.get as jest.Mock)
     .mockResolvedValueOnce(configWithDoc)
     .mockResolvedValueOnce(rawWithDuplicateText)
-    .mockResolvedValueOnce(emptyCanonicalState);
+    .mockResolvedValueOnce(emptyCanonicalState)
+    .mockResolvedValueOnce(emptyNodesState)
+    .mockResolvedValueOnce(emptyChunksState)
+    .mockResolvedValueOnce(emptyEmbeddingsState);
 
   await renderAndLoad();
   await openCanonicalStage();
