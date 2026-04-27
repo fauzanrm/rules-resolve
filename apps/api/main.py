@@ -13,6 +13,7 @@ from routers.raw_words import router as raw_words_router
 from routers.canonical_words import router as canonical_words_router
 from routers.nodes import router as nodes_router
 from routers.chunks import router as chunks_router
+from routers.embeddings import router as embeddings_router
 
 app = FastAPI()
 
@@ -33,3 +34,4 @@ app.include_router(raw_words_router, prefix="/raw-words")
 app.include_router(canonical_words_router, prefix="/canonical-words")
 app.include_router(nodes_router, prefix="/nodes")
 app.include_router(chunks_router, prefix="/chunks")
+app.include_router(embeddings_router, prefix="/embeddings")

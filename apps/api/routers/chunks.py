@@ -38,6 +38,8 @@ def purge_chunks(document_id: int) -> None:
                 )
     except Exception:
         pass
+    from routers.embeddings import purge_embeddings
+    purge_embeddings(document_id)
 
 
 def purge_chunk_assignments(document_id: int) -> None:
@@ -179,6 +181,9 @@ def commit_chunks(chatroom_id: int, body: CommitChunksRequest):
     indexed_chunks = list(body.chunks)
     for i, chunk in enumerate(indexed_chunks):
         chunk.chunk_index = i
+
+    from routers.embeddings import purge_embeddings
+    purge_embeddings(document_id)
 
     with get_connection() as conn:
         with conn.cursor() as cur:

@@ -31,6 +31,7 @@ import {
   committedToDraft as chunkCommittedToDraft,
   draftToApi as chunkDraftToApi,
 } from "@/components/config/chunkTypes";
+import { EmbeddingsApiState } from "@/components/config/embeddingsTypes";
 
 const MAX_NAME_LENGTH = 50;
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -166,6 +167,11 @@ export default function ConfigPage() {
   const isDividerDraggingRef = useRef(false);
   const dividerContainerRef = useRef<HTMLDivElement>(null);
 
+  // Embeddings stage state
+  const [embeddingsState, setEmbeddingsState] = useState<EmbeddingsApiState | null>(null);
+  const [embeddingsStatus, setEmbeddingsStatus] = useState<"idle" | "generating" | "success" | "error">("idle");
+  const [embeddingsError, setEmbeddingsError] = useState<string | null>(null);
+
   // Toast notifications
   type ToastItem = { id: string; message: string };
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -238,6 +244,15 @@ export default function ConfigPage() {
     return map;
   }, [workingChunks]);
 
+  const embeddingsUiState = useMemo(() => {
+    if (!embeddingsState?.has_committed_chunks) return "not_ready" as const;
+    if (embeddingsStatus === "generating") return "generating" as const;
+    if (embeddingsStatus === "error") return "error" as const;
+    if (embeddingsState.stored_embedding_count === 0) return "ready" as const;
+    if (embeddingsState.missing_count > 0) return "stale" as const;
+    return "complete" as const;
+  }, [embeddingsState, embeddingsStatus]);
+
   useEffect(() => {
     const session = getSession();
     if (!session) {
@@ -285,6 +300,9 @@ export default function ConfigPage() {
         setCommittedChunks(ck.committed_chunks);
         setWorkingChunks(ck.committed_chunks.map(chunkCommittedToDraft));
       }
+
+      const emb = await get<EmbeddingsApiState>(`/embeddings/${data.chatroom_id}`);
+      setEmbeddingsState(emb);
     }
 
     loadPage().catch((err: unknown) => {
@@ -442,10 +460,13 @@ export default function ConfigPage() {
       setCommittedChunks(null);
       setWorkingChunks(null);
       setChunksStatus("idle");
-      
+
       setSelectedChunkCanonicalIndices(new Set());
       setActiveChunkClientId(null);
       setActiveNodeIndexForChunk(null);
+      setEmbeddingsState(null);
+      setEmbeddingsStatus("idle");
+      setEmbeddingsError(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Commit failed. Please try again.";
       setCommitError(msg);
@@ -589,10 +610,13 @@ export default function ConfigPage() {
       setCommittedChunks(null);
       setWorkingChunks(null);
       setChunksStatus("idle");
-      
+
       setSelectedChunkCanonicalIndices(new Set());
       setActiveChunkClientId(null);
       setActiveNodeIndexForChunk(null);
+      setEmbeddingsState(null);
+      setEmbeddingsStatus("idle");
+      setEmbeddingsError(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -643,6 +667,9 @@ export default function ConfigPage() {
         setWorkingChunks(committedChunks ? committedChunks.map(chunkCommittedToDraft) : []);
       }
       setActiveStage("chunks");
+    }
+    if (key === "embeddings" && committedChunks !== null && committedChunks.length > 0) {
+      setActiveStage("embeddings");
     }
   }
 
@@ -724,10 +751,13 @@ export default function ConfigPage() {
       setCommittedChunks(null);
       setWorkingChunks(null);
       setChunksStatus("idle");
-      
+
       setSelectedChunkCanonicalIndices(new Set());
       setActiveChunkClientId(null);
       setActiveNodeIndexForChunk(null);
+      setEmbeddingsState(null);
+      setEmbeddingsStatus("idle");
+      setEmbeddingsError(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -1192,6 +1222,11 @@ export default function ConfigPage() {
       setCommittedChunks(result.committed_chunks ?? []);
       setWorkingChunks(result.committed_chunks ? result.committed_chunks.map(chunkCommittedToDraft) : []);
       setChunksStatus("success");
+      setEmbeddingsState((prev) =>
+        prev ? { ...prev, stored_embedding_count: 0, missing_count: prev.committed_chunk_count } : prev
+      );
+      setEmbeddingsStatus("idle");
+      setEmbeddingsError(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -1201,6 +1236,26 @@ export default function ConfigPage() {
             : "Commit failed";
       addToast(msg);
       setChunksStatus("error");
+    }
+  }
+
+  async function handleGenerateEmbeddings() {
+    if (!chatroomId || embeddingsStatus === "generating") return;
+    setEmbeddingsStatus("generating");
+    setEmbeddingsError(null);
+    try {
+      const result = await post<EmbeddingsApiState>(`/embeddings/${chatroomId}/generate`, {});
+      setEmbeddingsState(result);
+      setEmbeddingsStatus("success");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Embedding generation failed";
+      setEmbeddingsError(msg);
+      setEmbeddingsStatus("error");
     }
   }
 
@@ -1274,27 +1329,31 @@ export default function ConfigPage() {
                 const isCanonical = stage.key === "canonical_words";
                 const isOutline = stage.key === "outline";
                 const isChunks = stage.key === "chunks";
+                const isEmbeddings = stage.key === "embeddings";
                 const hasCommittedCanonical = committedCanonicalWordIds !== null;
                 const clickable =
                   isPdf ||
                   (isRaw && (hasSourcePdf || hasCommittedRawWords)) ||
                   (isCanonical && hasCommittedRawWords) ||
                   (isOutline && hasCommittedCanonical) ||
-                  (isChunks && committedNodes !== null);
+                  (isChunks && committedNodes !== null) ||
+                  (isEmbeddings && committedChunks !== null && committedChunks.length > 0);
                 const isActive = stage.key === activeStage;
                 const committedClass =
                   (isPdf && committedDoc) ||
                   (isRaw && hasCommittedRawWords && !hasGeneratedRawWords) ||
                   (isCanonical && hasCommittedCanonical && !isCanonicalDirty) ||
                   (isOutline && committedNodes !== null && !isOutlineDirty) ||
-                  (isChunks && committedChunks !== null && !isChunksDirty)
+                  (isChunks && committedChunks !== null && !isChunksDirty) ||
+                  (isEmbeddings && embeddingsUiState === "complete")
                     ? "chip-committed"
                     : "";
                 const generatedClass =
                   (isRaw && hasGeneratedRawWords) ||
                   (isCanonical && isCanonicalDirty && workingIncludedIds !== null) ||
                   (isOutline && isOutlineDirty) ||
-                  (isChunks && isChunksDirty)
+                  (isChunks && isChunksDirty) ||
+                  (isEmbeddings && embeddingsUiState === "stale")
                     ? "chip-generated"
                     : "";
                 const disabledClass = clickable ? "chip-active" : "chip-disabled";
@@ -1389,6 +1448,32 @@ export default function ConfigPage() {
                     {isChunks && committedChunks !== null && (
                       <span className="chip-meta">
                         {committedChunks.length} chunk{committedChunks.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {isEmbeddings && (committedChunks === null || committedChunks.length === 0) && (
+                      <span className="stage-helper-text">Complete Chunks first</span>
+                    )}
+                    {isEmbeddings && embeddingsUiState === "not_ready" && committedChunks !== null && committedChunks.length > 0 && (
+                      <span className="chip-status">Not generated</span>
+                    )}
+                    {isEmbeddings && embeddingsUiState === "ready" && (
+                      <span className="chip-status">Not generated</span>
+                    )}
+                    {isEmbeddings && embeddingsUiState === "generating" && (
+                      <span className="chip-status">Generating…</span>
+                    )}
+                    {isEmbeddings && embeddingsUiState === "stale" && (
+                      <span className="chip-status">Stale</span>
+                    )}
+                    {isEmbeddings && embeddingsUiState === "complete" && (
+                      <span className="chip-status">Stored</span>
+                    )}
+                    {isEmbeddings && embeddingsUiState === "error" && (
+                      <span className="chip-status">Error</span>
+                    )}
+                    {isEmbeddings && embeddingsState && embeddingsState.stored_embedding_count > 0 && (
+                      <span className="chip-meta">
+                        {embeddingsState.stored_embedding_count} embedding{embeddingsState.stored_embedding_count !== 1 ? "s" : ""}
                       </span>
                     )}
                   </li>
@@ -1693,6 +1778,34 @@ export default function ConfigPage() {
               </div>
             )}
 
+            {activeStage === "embeddings" && (
+              <>
+                <h2 className="panel-heading">Embeddings Generation</h2>
+                <p className="action-status-banner">
+                  {embeddingsUiState === "not_ready" && "Commit chunks first to enable embedding generation."}
+                  {embeddingsUiState === "ready" && `Ready to generate. ${embeddingsState?.committed_chunk_count ?? 0} chunk(s) will be embedded.`}
+                  {embeddingsUiState === "stale" && `Embeddings are out of date — ${embeddingsState?.committed_chunk_count ?? 0} chunks, ${embeddingsState?.stored_embedding_count ?? 0} stored, ${embeddingsState?.missing_count ?? 0} missing.`}
+                  {embeddingsUiState === "generating" && "Generating embeddings…"}
+                  {embeddingsUiState === "complete" && `All ${embeddingsState?.committed_chunk_count ?? 0} chunk(s) have stored embeddings.`}
+                  {embeddingsUiState === "error" && (embeddingsError ?? "Embedding generation failed.")}
+                </p>
+                {embeddingsState && embeddingsState.committed_chunk_count > 0 && (
+                  <p className="raw-words-summary">
+                    Committed chunks: {embeddingsState.committed_chunk_count} &nbsp;·&nbsp;
+                    Stored embeddings: {embeddingsState.stored_embedding_count} &nbsp;·&nbsp;
+                    Missing: {embeddingsState.missing_count}
+                  </p>
+                )}
+                <button
+                  className="commit-btn"
+                  onClick={handleGenerateEmbeddings}
+                  disabled={embeddingsUiState === "not_ready" || embeddingsStatus === "generating"}
+                >
+                  {embeddingsStatus === "generating" ? "Generating…" : "Generate & Store Embeddings"}
+                </button>
+              </>
+            )}
+
             {activeStage === "outline" && workingNodes !== null && (
               <>
                 <h2 className="panel-heading">Outline Generation</h2>
@@ -1982,6 +2095,12 @@ export default function ConfigPage() {
                     <p>Complete Outline first.</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeStage === "embeddings" && (
+              <div className="pdf-empty-state">
+                <p>Embeddings are stored in the database and used for retrieval. No visual preview is available.</p>
               </div>
             )}
 
