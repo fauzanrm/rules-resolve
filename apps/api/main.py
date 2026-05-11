@@ -15,6 +15,7 @@ from routers.nodes import router as nodes_router
 from routers.chunks import router as chunks_router
 from routers.embeddings import router as embeddings_router
 from routers.readiness import router as readiness_router
+from routers.ask import router as ask_router
 
 app = FastAPI()
 
@@ -37,3 +38,4 @@ app.include_router(nodes_router, prefix="/nodes")
 app.include_router(chunks_router, prefix="/chunks")
 app.include_router(embeddings_router, prefix="/embeddings")
 app.include_router(readiness_router, prefix="/readiness")
+app.include_router(ask_router, prefix="/ask")
