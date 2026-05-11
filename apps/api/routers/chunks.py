@@ -212,6 +212,15 @@ def commit_chunks(chatroom_id: int, body: CommitChunksRequest):
                         VALUES {placeholders}""",
                     flat,
                 )
+            cur.execute(
+                """
+                UPDATE documents
+                SET chunks_last_generated_at = NOW(),
+                    embeddings_last_generated_at = NULL
+                WHERE id = %s
+                """,
+                (document_id,),
+            )
 
     return ChunksState(
         chatroom_id=chatroom_id,

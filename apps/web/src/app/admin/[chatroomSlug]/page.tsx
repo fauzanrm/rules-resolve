@@ -32,6 +32,7 @@ import {
   draftToApi as chunkDraftToApi,
 } from "@/components/config/chunkTypes";
 import { EmbeddingsApiState } from "@/components/config/embeddingsTypes";
+import { ChatroomReadiness } from "@/components/ChatroomCard";
 
 const MAX_NAME_LENGTH = 50;
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -54,6 +55,7 @@ interface ConfigPageData {
   chatroom_id: number;
   chatroom_name: string;
   document: DocumentMeta | null;
+  published_at: string | null;
 }
 
 const STAGES = [
@@ -116,6 +118,7 @@ export default function ConfigPage() {
     "idle" | "generating" | "generated" | "committing" | "success" | "error"
   >("idle");
   const [rawWordsError, setRawWordsError] = useState<string | null>(null);
+  const [rawWordsCommittedAt, setRawWordsCommittedAt] = useState<string | null>(null);
   const [hoveredWord, setHoveredWord] = useState<RawWord | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
@@ -155,6 +158,7 @@ export default function ConfigPage() {
   const [committedChunks, setCommittedChunks] = useState<ChunkItemApi[] | null>(null);
   const [workingChunks, setWorkingChunks] = useState<DraftChunk[] | null>(null);
   const [chunksStatus, setChunksStatus] = useState<"idle" | "committing" | "success" | "error">("idle");
+  const [chunksCommittedAt, setChunksCommittedAt] = useState<string | null>(null);
   const [selectedChunkCanonicalIndices, setSelectedChunkCanonicalIndices] = useState<Set<number>>(new Set());
   const [activeChunkClientId, setActiveChunkClientId] = useState<string | null>(null);
   const [activeNodeIndexForChunk, setActiveNodeIndexForChunk] = useState<number | null>(null);
@@ -171,6 +175,12 @@ export default function ConfigPage() {
   const [embeddingsState, setEmbeddingsState] = useState<EmbeddingsApiState | null>(null);
   const [embeddingsStatus, setEmbeddingsStatus] = useState<"idle" | "generating" | "success" | "error">("idle");
   const [embeddingsError, setEmbeddingsError] = useState<string | null>(null);
+
+  // Publish state
+  const [publishedAt, setPublishedAt] = useState<string | null>(null);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   // Toast notifications
   type ToastItem = { id: string; message: string };
@@ -253,6 +263,50 @@ export default function ConfigPage() {
     return "complete" as const;
   }, [embeddingsState, embeddingsStatus]);
 
+  const { isPublishReady, blockingStages } = useMemo(() => {
+    const blocking: string[] = [];
+    if (!committedDoc) blocking.push("PDF Upload");
+    if (!committedRawWords || isRawWordsDirty) blocking.push("Raw Words Detection");
+    if (!canonicalCommittedAt || isCanonicalDirty) blocking.push("Canonical Words Selection");
+    if (!committedNodes?.length || isOutlineDirty) blocking.push("Outline Generation");
+    if (!committedChunks?.length || isChunksDirty) blocking.push("Chunk Assignment");
+    if (
+      !embeddingsState ||
+      !embeddingsState.has_committed_chunks ||
+      embeddingsState.missing_count > 0
+    ) {
+      blocking.push("Embeddings Generation");
+    }
+    return { isPublishReady: blocking.length === 0, blockingStages: blocking };
+  }, [
+    committedDoc,
+    committedRawWords,
+    isRawWordsDirty,
+    canonicalCommittedAt,
+    isCanonicalDirty,
+    committedNodes,
+    isOutlineDirty,
+    committedChunks,
+    isChunksDirty,
+    embeddingsState,
+  ]);
+
+  async function handlePublish() {
+    if (!chatroomId || isPublishing) return;
+    setIsPublishing(true);
+    setPublishError(null);
+    try {
+      const result = await post<{ published_at: string }>(`/chatrooms/${chatroomId}/publish`, {});
+      setPublishedAt(result.published_at);
+      setPublishModalOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to publish.";
+      setPublishError(msg);
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
   useEffect(() => {
     const session = getSession();
     if (!session) {
@@ -269,14 +323,22 @@ export default function ConfigPage() {
       setCommittedDoc(data.document);
       setChatroomId(data.chatroom_id);
       setChatroomName(data.chatroom_name);
+      setPublishedAt(data.published_at ?? null);
 
-      const rw = await get<RawWordsState>(`/raw-words/${data.chatroom_id}`);
+      const [rw, cw, nd, ck, emb, readiness] = await Promise.all([
+        get<RawWordsState>(`/raw-words/${data.chatroom_id}`),
+        get<CanonicalWordsState>(`/canonical-words/${data.chatroom_id}`),
+        get<NodesApiResponse>(`/nodes/${data.chatroom_id}`),
+        get<ChunksApiResponse>(`/chunks/${data.chatroom_id}`),
+        get<EmbeddingsApiState>(`/embeddings/${data.chatroom_id}`),
+        get<ChatroomReadiness>(`/readiness/${data.chatroom_id}`).catch(() => null),
+      ]);
+
       setHasSourcePdf(rw.has_source_pdf);
       const rawWordsPayload = rw.raw_words ?? null;
       if (rawWordsPayload) setCommittedRawWords(rawWordsPayload);
       if (rw.error) { setRawWordsError(rw.error); setRawWordsStatus("error"); }
 
-      const cw = await get<CanonicalWordsState>(`/canonical-words/${data.chatroom_id}`);
       if (cw.committed_words?.length && rawWordsPayload) {
         const ids = new Set(
           cw.committed_words
@@ -289,20 +351,29 @@ export default function ConfigPage() {
         }
       }
 
-      const nd = await get<NodesApiResponse>(`/nodes/${data.chatroom_id}`);
       if (nd.committed_nodes?.length) {
         setCommittedNodes(nd.committed_nodes);
         setWorkingNodes(nd.committed_nodes.map(committedToDraft));
       }
 
-      const ck = await get<ChunksApiResponse>(`/chunks/${data.chatroom_id}`);
       if (ck.committed_chunks?.length) {
         setCommittedChunks(ck.committed_chunks);
         setWorkingChunks(ck.committed_chunks.map(chunkCommittedToDraft));
       }
 
-      const emb = await get<EmbeddingsApiState>(`/embeddings/${data.chatroom_id}`);
       setEmbeddingsState(emb);
+
+      if (readiness) {
+        if (readiness.stages.raw_words.committed_at) {
+          setRawWordsCommittedAt(readiness.stages.raw_words.committed_at);
+        }
+        if (readiness.stages.nodes.committed_at) {
+          setOutlineCommittedAt(readiness.stages.nodes.committed_at);
+        }
+        if (readiness.stages.chunks.committed_at) {
+          setChunksCommittedAt(readiness.stages.chunks.committed_at);
+        }
+      }
     }
 
     loadPage().catch((err: unknown) => {
@@ -437,9 +508,10 @@ export default function ConfigPage() {
       setCommittedDoc(doc);
       setStagedFile(null);
       setIsDirty(false);
-      // Source PDF changed: invalidate raw words and canonical words
+      // Source PDF changed: invalidate raw words and all downstream
       setCommittedRawWords(null);
       setGeneratedRawWords(null);
+      setRawWordsCommittedAt(null);
       setHoveredWord(null);
       setHoveredIndex(null);
       setRawWordsStatus("idle");
@@ -460,7 +532,7 @@ export default function ConfigPage() {
       setCommittedChunks(null);
       setWorkingChunks(null);
       setChunksStatus("idle");
-
+      setChunksCommittedAt(null);
       setSelectedChunkCanonicalIndices(new Set());
       setActiveChunkClientId(null);
       setActiveNodeIndexForChunk(null);
@@ -570,6 +642,29 @@ export default function ConfigPage() {
       );
       setGeneratedRawWords(payload);
       setRawWordsStatus("generated");
+      // New raw words invalidate all downstream derived data
+      setCommittedCanonicalWordIds(null);
+      setWorkingIncludedIds(null);
+      setSelectedWordIds(new Set());
+      setCanonicalStatus("idle");
+      setCanonicalError(null);
+      setCanonicalCommittedAt(null);
+      setCommittedNodes(null);
+      setWorkingNodes(null);
+      setOutlineStatus("idle");
+      setOutlineCommittedAt(null);
+      setSelectedCanonicalIndices(new Set());
+      setActiveNodeClientId(null);
+      setCommittedChunks(null);
+      setWorkingChunks(null);
+      setChunksStatus("idle");
+      setChunksCommittedAt(null);
+      setSelectedChunkCanonicalIndices(new Set());
+      setActiveChunkClientId(null);
+      setActiveNodeIndexForChunk(null);
+      setEmbeddingsState(null);
+      setEmbeddingsStatus("idle");
+      setEmbeddingsError(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -594,6 +689,7 @@ export default function ConfigPage() {
       setCommittedRawWords(committed);
       setGeneratedRawWords(null);
       setRawWordsStatus("success");
+      setRawWordsCommittedAt(new Date().toISOString());
       // Raw words replaced: canonical words and outline are now invalid
       setCommittedCanonicalWordIds(null);
       setWorkingIncludedIds(null);
@@ -610,7 +706,7 @@ export default function ConfigPage() {
       setCommittedChunks(null);
       setWorkingChunks(null);
       setChunksStatus("idle");
-
+      setChunksCommittedAt(null);
       setSelectedChunkCanonicalIndices(new Set());
       setActiveChunkClientId(null);
       setActiveNodeIndexForChunk(null);
@@ -751,7 +847,7 @@ export default function ConfigPage() {
       setCommittedChunks(null);
       setWorkingChunks(null);
       setChunksStatus("idle");
-
+      setChunksCommittedAt(null);
       setSelectedChunkCanonicalIndices(new Set());
       setActiveChunkClientId(null);
       setActiveNodeIndexForChunk(null);
@@ -1070,6 +1166,8 @@ export default function ConfigPage() {
       setCommittedNodes(result.committed_nodes);
       setWorkingNodes(result.committed_nodes ? result.committed_nodes.map(committedToDraft) : []);
       setOutlineStatus("success");
+      setOutlineCommittedAt(new Date().toISOString());
+      setChunksCommittedAt(null);
       // Clear working chunk assignments (node indices are now stale); committedChunks
       // intentionally not cleared so isChunksDirty becomes true and forces a recommit.
       setWorkingChunks((prev) => prev ? prev.map((c) => ({ ...c, assignedNodeIndex: null })) : prev);
@@ -1222,9 +1320,16 @@ export default function ConfigPage() {
       setCommittedChunks(result.committed_chunks ?? []);
       setWorkingChunks(result.committed_chunks ? result.committed_chunks.map(chunkCommittedToDraft) : []);
       setChunksStatus("success");
-      setEmbeddingsState((prev) =>
-        prev ? { ...prev, stored_embedding_count: 0, missing_count: prev.committed_chunk_count } : prev
-      );
+      setChunksCommittedAt(new Date().toISOString());
+      const chunkCount = result.committed_chunks?.length ?? 0;
+      setEmbeddingsState((prev) => ({
+        chatroom_id: chatroomId!,
+        document_id: prev?.document_id ?? null,
+        has_committed_chunks: true,
+        committed_chunk_count: chunkCount,
+        stored_embedding_count: 0,
+        missing_count: chunkCount,
+      }));
       setEmbeddingsStatus("idle");
       setEmbeddingsError(null);
     } catch (err: unknown) {
@@ -1396,6 +1501,7 @@ export default function ConfigPage() {
                       <span className="chip-meta">
                         {committedRawWords.word_count} words &middot;{" "}
                         {committedRawWords.page_count} pages
+                        {rawWordsCommittedAt ? ` · ${formatDate(rawWordsCommittedAt)}` : ""}
                       </span>
                     )}
                     {isCanonical && !hasCommittedRawWords && (
@@ -1413,6 +1519,7 @@ export default function ConfigPage() {
                     {isCanonical && committedCanonicalWordIds !== null && (
                       <span className="chip-meta">
                         {committedCanonicalWordIds.size} words included
+                        {canonicalCommittedAt ? ` · ${formatDate(canonicalCommittedAt)}` : ""}
                       </span>
                     )}
                     {isOutline && !hasCommittedCanonical && (
@@ -1448,6 +1555,7 @@ export default function ConfigPage() {
                     {isChunks && committedChunks !== null && (
                       <span className="chip-meta">
                         {committedChunks.length} chunk{committedChunks.length !== 1 ? "s" : ""}
+                        {chunksCommittedAt ? ` · ${formatDate(chunksCommittedAt)}` : ""}
                       </span>
                     )}
                     {isEmbeddings && (committedChunks === null || committedChunks.length === 0) && (
@@ -1480,6 +1588,31 @@ export default function ConfigPage() {
                 );
               })}
             </ul>
+
+            {/* Publish section */}
+            <div className="publish-section">
+              {publishedAt && isPublishReady && (
+                <span className="published-badge">Published</span>
+              )}
+              <button
+                className="publish-btn"
+                disabled={!isPublishReady || isPublishing}
+                onClick={() => setPublishModalOpen(true)}
+                title={
+                  isPublishReady
+                    ? "Publish this chatroom to enable the Ask action"
+                    : `Blocking: ${blockingStages.join(", ")}`
+                }
+              >
+                {isPublishing ? "Publishing…" : publishedAt && isPublishReady ? "Republish" : "Publish"}
+              </button>
+              {!isPublishReady && blockingStages.length > 0 && (
+                <p className="publish-blocked-hint">
+                  Needs: {blockingStages.join(", ")}
+                </p>
+              )}
+              {publishError && <p className="publish-error">{publishError}</p>}
+            </div>
           </div>
 
           {/* Middle — Action Panel */}
@@ -2415,6 +2548,40 @@ export default function ConfigPage() {
               <button className="toast-dismiss" onClick={() => dismissToast(toast.id)} aria-label="Dismiss">✕</button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Publish confirmation modal */}
+      {publishModalOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-header">
+              <h2>Publish Chatroom?</h2>
+            </div>
+            <div className="modal-body">
+              <p>
+                This will mark <strong>{chatroomName}</strong> as published and enable the Ask
+                action for this chatroom.
+              </p>
+              {publishError && <p className="commit-error">{publishError}</p>}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="modal-cancel-btn"
+                onClick={() => { setPublishModalOpen(false); setPublishError(null); }}
+                disabled={isPublishing}
+              >
+                Cancel
+              </button>
+              <button
+                className="modal-confirm-btn"
+                onClick={handlePublish}
+                disabled={isPublishing}
+              >
+                {isPublishing ? "Publishing…" : "Publish"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

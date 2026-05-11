@@ -210,6 +210,17 @@ def commit_canonical_words(chatroom_id: int, body: CommitRequest):
                         VALUES {placeholders}""",
                     flat,
                 )
+            cur.execute(
+                """
+                UPDATE documents
+                SET canonical_words_last_generated_at = NOW(),
+                    nodes_last_generated_at = NULL,
+                    chunks_last_generated_at = NULL,
+                    embeddings_last_generated_at = NULL
+                WHERE id = %s
+                """,
+                (document_id,),
+            )
 
     committed_words = [
         CanonicalWord(

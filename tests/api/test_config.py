@@ -37,7 +37,7 @@ def _mock_db_no_chatroom(mock_conn):
 
 def _mock_db_chatroom_no_doc(mock_conn, chatroom_name="Test Game"):
     cur = MagicMock()
-    cur.fetchone.side_effect = [(1, chatroom_name), None]
+    cur.fetchone.side_effect = [(1, chatroom_name, None), None]
     mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
 
 
@@ -45,7 +45,7 @@ def _mock_db_chatroom_with_doc(mock_conn, chatroom_name="Test Game"):
     from datetime import datetime
     cur = MagicMock()
     doc_row = (1, "rules.pdf", 1024, 10, datetime(2026, 4, 17, 12, 0, 0))
-    cur.fetchone.side_effect = [(1, chatroom_name), doc_row]
+    cur.fetchone.side_effect = [(1, chatroom_name, None), doc_row]
     mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
 
 

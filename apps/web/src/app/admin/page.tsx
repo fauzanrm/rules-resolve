@@ -5,17 +5,19 @@ import { useRouter } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { get, postForm } from "@/lib/api";
 import Navbar from "@/components/Navbar";
-import ChatroomCard from "@/components/ChatroomCard";
+import ChatroomCard, { ChatroomReadiness } from "@/components/ChatroomCard";
 
 interface Chatroom {
   id: number;
   name: string;
   cover_image_url?: string | null;
+  published_at?: string | null;
 }
 
 export default function AdminPage() {
   const router = useRouter();
   const [chatrooms, setChatrooms] = useState<Chatroom[]>([]);
+  const [readinessMap, setReadinessMap] = useState<Record<number, ChatroomReadiness>>({});
   const [fetchError, setFetchError] = useState(false);
 
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -23,6 +25,18 @@ export default function AdminPage() {
   const [newFile, setNewFile] = useState<File | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  function refreshReadiness(rooms: Chatroom[]) {
+    Promise.all(
+      rooms.map((r) =>
+        get<ChatroomReadiness>(`/readiness/${r.id}`).catch(() => null)
+      )
+    ).then((results) => {
+      const map: Record<number, ChatroomReadiness> = {};
+      results.forEach((r, i) => { if (r) map[rooms[i].id] = r; });
+      setReadinessMap(map);
+    });
+  }
 
   useEffect(() => {
     const session = getSession();
@@ -36,7 +50,10 @@ export default function AdminPage() {
     }
 
     get<Chatroom[]>("/chatrooms/")
-      .then(setChatrooms)
+      .then((rooms) => {
+        setChatrooms(rooms);
+        refreshReadiness(rooms);
+      })
       .catch(() => setFetchError(true));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -108,7 +125,13 @@ export default function AdminPage() {
           ) : (
             <div className="chatroom-grid">
               {chatrooms.map((c) => (
-                <ChatroomCard key={c.id} chatroomId={c.id} name={c.name} coverImageUrl={c.cover_image_url} />
+                <ChatroomCard
+                  key={c.id}
+                  chatroomId={c.id}
+                  name={c.name}
+                  coverImageUrl={c.cover_image_url}
+                  readiness={readinessMap[c.id] ?? null}
+                />
               ))}
               <button className="add-chatroom-card" onClick={openAddModal}>
                 <span className="add-chatroom-icon">+</span>
@@ -117,6 +140,7 @@ export default function AdminPage() {
             </div>
           )}
         </section>
+
       </main>
 
       {addModalOpen && (

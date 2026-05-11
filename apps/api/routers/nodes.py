@@ -220,6 +220,16 @@ def commit_nodes(chatroom_id: int, body: CommitNodesRequest):
                         VALUES {placeholders}""",
                     flat,
                 )
+            cur.execute(
+                """
+                UPDATE documents
+                SET nodes_last_generated_at = NOW(),
+                    chunks_last_generated_at = NULL,
+                    embeddings_last_generated_at = NULL
+                WHERE id = %s
+                """,
+                (document_id,),
+            )
 
     from routers.chunks import purge_chunk_assignments
     purge_chunk_assignments(document_id)

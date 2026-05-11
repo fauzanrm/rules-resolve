@@ -18,14 +18,23 @@ jest.mock("@/lib/auth", () => ({
 
 jest.mock("@/lib/api", () => ({
   get: jest.fn(),
+  postForm: jest.fn(),
 }));
 
 const adminSession = { role: "admin", username: "adminuser" };
 
+function mockGetWithReadiness(chatrooms: { id: number; name: string }[] = []) {
+  (apiLib.get as jest.Mock).mockImplementation((url: string) => {
+    if (url === "/chatrooms/") return Promise.resolve(chatrooms);
+    if (url.startsWith("/readiness/")) return Promise.resolve(null);
+    return Promise.resolve(null);
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   (authLib.getSession as jest.Mock).mockReturnValue(adminSession);
-  (apiLib.get as jest.Mock).mockResolvedValue([]);
+  mockGetWithReadiness();
 });
 
 afterEach(() => {
@@ -64,7 +73,7 @@ test("clicking logout clears session and redirects to /login", async () => {
 
 // 3. Chatroom fetch — cards rendered with correct names
 test("fetched chatrooms are rendered as cards", async () => {
-  (apiLib.get as jest.Mock).mockResolvedValue([
+  mockGetWithReadiness([
     { id: 1, name: "Catan" },
     { id: 2, name: "Pandemic" },
   ]);
@@ -79,7 +88,7 @@ test("fetched chatrooms are rendered as cards", async () => {
 
 // 4. Add-new card always visible
 test("shows add new chatroom card when no chatrooms exist", async () => {
-  (apiLib.get as jest.Mock).mockResolvedValue([]);
+  mockGetWithReadiness([]);
 
   render(<AdminPage />);
 
@@ -88,9 +97,10 @@ test("shows add new chatroom card when no chatrooms exist", async () => {
   });
 });
 
-// 5. Chatroom cards link to their config page
-test("chatroom cards link to their slug-based config page", async () => {
-  (apiLib.get as jest.Mock).mockResolvedValue([{ id: 1, name: "Chess" }]);
+// 5. Chatroom Configure button navigates to slug-based config page
+test("chatroom Configure button navigates to slug-based config page", async () => {
+  const user = userEvent.setup();
+  mockGetWithReadiness([{ id: 1, name: "Chess" }]);
 
   render(<AdminPage />);
 
@@ -98,10 +108,8 @@ test("chatroom cards link to their slug-based config page", async () => {
     expect(screen.getByText("Chess")).toBeInTheDocument();
   });
 
-  const card = screen.getByText("Chess").closest(".chatroom-card");
-  expect(card).toBeInTheDocument();
-  expect(card?.tagName.toLowerCase()).toBe("a");
-  expect(card).toHaveAttribute("href", "/admin/chess");
+  await user.click(screen.getByRole("button", { name: /configure/i }));
+  expect(mockPush).toHaveBeenCalledWith("/admin/chess");
 });
 
 // 6. Partial visibility — chatroom section present in document on initial render

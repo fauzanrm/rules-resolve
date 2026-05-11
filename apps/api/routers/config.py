@@ -61,6 +61,7 @@ class ConfigPageResponse(BaseModel):
     chatroom_id: int
     chatroom_name: str
     document: Optional[DocumentMeta] = None
+    published_at: Optional[datetime] = None
 
 
 def _build_document_meta(chatroom_id: int, doc_row: tuple, supabase) -> DocumentMeta:
@@ -87,13 +88,13 @@ def get_config(chatroom_slug: str):
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, name FROM chatrooms WHERE LOWER(REPLACE(name, ' ', '-')) = LOWER(%s)",
+                    "SELECT id, name, published_at FROM chatrooms WHERE LOWER(REPLACE(name, ' ', '-')) = LOWER(%s)",
                     (chatroom_slug,),
                 )
                 row = cur.fetchone()
                 if not row:
                     raise HTTPException(status_code=404, detail="Chatroom not found")
-                chatroom_id, chatroom_name = row
+                chatroom_id, chatroom_name, published_at = row
 
                 cur.execute(
                     """
@@ -120,6 +121,7 @@ def get_config(chatroom_slug: str):
         chatroom_id=chatroom_id,
         chatroom_name=chatroom_name,
         document=document,
+        published_at=published_at,
     )
 
 
@@ -189,7 +191,14 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
                     cur.execute(
                         """
                         UPDATE documents
-                        SET file_name = %s, file_size = %s, page_count = %s, last_updated_at = NOW()
+                        SET file_name = %s, file_size = %s, page_count = %s,
+                            last_updated_at = NOW(),
+                            source_pdf_last_updated_at = NOW(),
+                            raw_words_last_generated_at = NULL,
+                            canonical_words_last_generated_at = NULL,
+                            nodes_last_generated_at = NULL,
+                            chunks_last_generated_at = NULL,
+                            embeddings_last_generated_at = NULL
                         WHERE id = %s
                         RETURNING id, file_name, file_size, page_count, last_updated_at
                         """,
@@ -199,8 +208,10 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
                 else:
                     cur.execute(
                         """
-                        INSERT INTO documents (file_name, file_size, page_count, last_updated_at)
-                        VALUES (%s, %s, %s, NOW())
+                        INSERT INTO documents
+                            (file_name, file_size, page_count, last_updated_at,
+                             source_pdf_last_updated_at)
+                        VALUES (%s, %s, %s, NOW(), NOW())
                         RETURNING id, file_name, file_size, page_count, last_updated_at
                         """,
                         (file.filename, len(contents), page_count),

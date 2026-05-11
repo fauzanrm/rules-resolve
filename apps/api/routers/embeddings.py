@@ -221,6 +221,15 @@ def generate_embeddings(chatroom_id: int):
                             f"INSERT INTO document_embeddings (document_id, chunk_index, embedding) VALUES {placeholders}",
                             flat,
                         )
+                    cur.execute(
+                        """
+                        UPDATE documents
+                        SET embeddings_last_generated_at = NOW(),
+                            embedding_model = %s
+                        WHERE id = %s
+                        """,
+                        ("text-embedding-3-small", document_id),
+                    )
         except HTTPException:
             raise
         except Exception as e:

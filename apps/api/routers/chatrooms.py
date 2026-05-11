@@ -1,4 +1,5 @@
 import io
+from datetime import datetime
 from typing import Optional
 
 import fitz
@@ -72,6 +73,7 @@ class Chatroom(BaseModel):
     id: int
     name: str
     cover_image_url: Optional[str] = None
+    published_at: Optional[datetime] = None
 
 
 @router.get("/", response_model=list[Chatroom])
@@ -81,10 +83,10 @@ def list_chatrooms():
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT c.id, c.name, MIN(cd.document_id) AS first_document_id
+                    SELECT c.id, c.name, c.published_at, MIN(cd.document_id) AS first_document_id
                     FROM chatrooms c
                     LEFT JOIN chatroom_documents cd ON cd.chatroom_id = c.id
-                    GROUP BY c.id, c.name
+                    GROUP BY c.id, c.name, c.published_at
                     ORDER BY c.name ASC
                     """
                 )
@@ -95,11 +97,11 @@ def list_chatrooms():
     supabase = get_supabase()
 
     result = []
-    for chatroom_id, name, first_document_id in rows:
+    for chatroom_id, name, published_at, first_document_id in rows:
         cover_url = None
         if supabase and first_document_id is not None:
             cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
-        result.append(Chatroom(id=chatroom_id, name=name, cover_image_url=cover_url))
+        result.append(Chatroom(id=chatroom_id, name=name, cover_image_url=cover_url, published_at=published_at))
 
     return result
 
@@ -190,11 +192,12 @@ def rename_chatroom(chatroom_id: int, body: RenameRequest):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, name FROM chatrooms WHERE id = %s", (chatroom_id,))
+                cur.execute("SELECT id, name, published_at FROM chatrooms WHERE id = %s", (chatroom_id,))
                 row = cur.fetchone()
                 if not row:
                     raise HTTPException(status_code=404, detail="Chatroom not found")
                 current_name = row[1]
+                published_at = row[2]
 
                 candidate = (body.name or "").strip()
                 if candidate == current_name:
@@ -222,4 +225,42 @@ def rename_chatroom(chatroom_id: int, body: RenameRequest):
     if supabase and first_document_id is not None:
         cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
 
-    return Chatroom(id=chatroom_id, name=new_name, cover_image_url=cover_url)
+    return Chatroom(id=chatroom_id, name=new_name, cover_image_url=cover_url, published_at=published_at)
+
+
+@router.post("/{chatroom_id}/publish", response_model=Chatroom)
+def publish_chatroom(chatroom_id: int):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE chatrooms
+                    SET published_at = NOW()
+                    WHERE id = %s
+                    RETURNING id, name, published_at
+                    """,
+                    (chatroom_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Chatroom not found")
+                chatroom_id_out, name, published_at = row
+
+                cur.execute(
+                    "SELECT MIN(document_id) FROM chatroom_documents WHERE chatroom_id = %s",
+                    (chatroom_id,),
+                )
+                doc_row = cur.fetchone()
+                first_document_id = doc_row[0] if doc_row else None
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to publish chatroom: {e}")
+
+    supabase = get_supabase()
+    cover_url = None
+    if supabase and first_document_id is not None:
+        cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
+
+    return Chatroom(id=chatroom_id_out, name=name, cover_image_url=cover_url, published_at=published_at)
