@@ -38,7 +38,7 @@ export default function AskPage() {
   const [loading, setLoading] = useState(true);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
-  const { messages, sendMessage, isLoading } = useChat(chatroomSlug);
+  const { messages, sendMessage, rateMessage, isLoading } = useChat(chatroomSlug);
   const { active: activeHighlight, highlight } = useHighlight();
 
   useEffect(() => {
@@ -142,6 +142,7 @@ export default function AskPage() {
             messages={messages}
             activeHighlight={activeHighlight}
             onCitationClick={handleCitationClick}
+            onRate={rateMessage}
             isLoading={isLoading}
           />
           <ChatInput onSubmit={sendMessage} disabled={isLoading} />

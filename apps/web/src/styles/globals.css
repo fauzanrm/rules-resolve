@@ -1929,6 +1929,33 @@ input[type="file"] {
   border-top: 1px solid #e5e7eb;
 }
 
+.message-rating {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.message-rating-btn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.message-rating-btn:hover {
+  opacity: 1;
+}
+
+.message-rating-btn--active {
+  opacity: 1;
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
 /* ── Loading dots ────────────────────────────────────────────────────────── */
 
 .message-loading-dots {

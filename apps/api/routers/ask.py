@@ -2,11 +2,13 @@ import json
 import logging
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from openai import OpenAI
+from psycopg2.extras import Json
 from pydantic import BaseModel
 
 from db import get_connection
@@ -58,11 +60,18 @@ class Citation(BaseModel):
 class ChatQueryRequest(BaseModel):
     question: str
     history: list[ChatMessage] = []
+    session_id: Optional[str] = None
+    username: Optional[str] = None
 
 
 class ChatQueryResponse(BaseModel):
+    turn_id: int
     answer: str
     citations: list[Citation]
+
+
+class RatingRequest(BaseModel):
+    rating: Optional[str] = None
 
 
 def _assert_published(chatroom_slug: str) -> tuple[int, int]:
@@ -306,11 +315,44 @@ def _call_openai(
     return answer, raw_citations
 
 
+def _record_chat_turn(
+    chatroom_id: int,
+    document_id: int,
+    session_id: str,
+    username: Optional[str],
+    question: str,
+    answer: str,
+    citations: list[Citation],
+) -> int:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO chat_turns
+                    (chatroom_id, document_id, session_id, username, question, answer, citations)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    chatroom_id,
+                    document_id,
+                    session_id,
+                    username,
+                    question,
+                    answer,
+                    Json([c.model_dump() for c in citations]),
+                ),
+            )
+            return cur.fetchone()[0]
+
+
 @router.post("/{chatroom_slug}", response_model=ChatQueryResponse)
 def chat_query(chatroom_slug: str, body: ChatQueryRequest):
     question = body.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question must not be empty")
+
+    session_id = body.session_id or str(uuid.uuid4())
 
     chatroom_id, document_id = _assert_published(chatroom_slug)
 
@@ -319,10 +361,11 @@ def chat_query(chatroom_slug: str, body: ChatQueryRequest):
 
     if not chunks:
         logger.info("ask chatroom=%s doc=%s: no chunks retrieved", chatroom_id, document_id)
-        return ChatQueryResponse(
-            answer="I don't have enough information in the rulebook to answer that.",
-            citations=[],
+        answer = "I don't have enough information in the rulebook to answer that."
+        turn_id = _record_chat_turn(
+            chatroom_id, document_id, session_id, body.username, question, answer, [],
         )
+        return ChatQueryResponse(turn_id=turn_id, answer=answer, citations=[])
 
     answer, raw_citations = _call_openai(question, chunks, body.history)
 
@@ -363,4 +406,32 @@ def chat_query(chatroom_slug: str, body: ChatQueryRequest):
         chatroom_id, document_id, len(chunks), len(citations),
     )
 
-    return ChatQueryResponse(answer=answer, citations=citations)
+    turn_id = _record_chat_turn(
+        chatroom_id, document_id, session_id, body.username, question, answer, citations,
+    )
+
+    return ChatQueryResponse(turn_id=turn_id, answer=answer, citations=citations)
+
+
+@router.patch("/turns/{turn_id}/rating")
+def rate_turn(turn_id: int, body: RatingRequest):
+    if body.rating is not None and body.rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating must be 'up', 'down', or null")
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE chat_turns
+                SET rating = %s, rated_at = CASE WHEN %s IS NULL THEN NULL ELSE now() END
+                WHERE id = %s
+                RETURNING id
+                """,
+                (body.rating, body.rating, turn_id),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Chat turn not found")
+
+    return {"turn_id": turn_id, "rating": body.rating}

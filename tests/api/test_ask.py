@@ -36,7 +36,10 @@ SAMPLE_WORDS = [
 ]
 
 
-def _mock_conn_published(mock_conn, chatroom_id=CHATROOM_ID, doc_id=DOC_ID, embedding_count=5):
+TURN_ID = 42
+
+
+def _mock_conn_published(mock_conn, chatroom_id=CHATROOM_ID, doc_id=DOC_ID, embedding_count=5, turn_id=TURN_ID):
     """Set up db mock for a published chatroom with embeddings."""
     from datetime import datetime, timezone
     cur = MagicMock()
@@ -44,6 +47,7 @@ def _mock_conn_published(mock_conn, chatroom_id=CHATROOM_ID, doc_id=DOC_ID, embe
         (chatroom_id, datetime(2024, 1, 1, tzinfo=timezone.utc)),  # chatroom lookup
         (doc_id,),                   # document lookup
         (embedding_count,),          # embedding count
+        (turn_id,),                  # chat_turns insert
     ]
     mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
     return cur
@@ -109,6 +113,7 @@ def test_no_embeddings_returns_fallback(mock_conn, mock_embed, mock_retrieve):
     data = resp.json()
     assert "don't have enough information" in data["answer"].lower()
     assert data["citations"] == []
+    assert data["turn_id"] == TURN_ID
 
 
 # ── 5. Happy path — 3 valid citations ────────────────────────────────────────
@@ -152,6 +157,7 @@ def test_happy_path_three_citations(mock_conn, mock_embed, mock_retrieve, mock_o
     assert len(data["citations"]) == 2
     assert data["citations"][0]["chunk_id"] == 1
     assert data["citations"][1]["chunk_id"] == 2
+    assert data["turn_id"] == TURN_ID
 
 
 # ── 6. Model returns more citations than MAX_CITATIONS — capped ───────────────
@@ -281,3 +287,75 @@ def test_completion_failure_returns_502(mock_conn, mock_embed, mock_retrieve, mo
 def test_get_not_allowed():
     resp = client.get(f"/ask/{SLUG}")
     assert resp.status_code == 405
+
+
+# ── 13. Chat turn recorded with session_id/username passed through ────────────
+
+@patch("routers.ask._build_citation")
+@patch("routers.ask._call_openai")
+@patch("routers.ask._retrieve_chunks", return_value=SAMPLE_CHUNKS)
+@patch("routers.ask._embed_query", return_value=[0.1] * 1536)
+@patch("routers.ask.get_connection")
+def test_chat_turn_recorded(mock_conn, mock_embed, mock_retrieve, mock_openai, mock_build):
+    cur = _mock_conn_published(mock_conn)
+    mock_openai.return_value = ("An answer.", [])
+
+    resp = client.post(
+        f"/ask/{SLUG}",
+        json={"question": "How do I win?", "session_id": "abc-123", "username": "alice"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["turn_id"] == TURN_ID
+
+    insert_call = cur.execute.call_args_list[-1]
+    sql, params = insert_call[0]
+    assert "INSERT INTO chat_turns" in sql
+    assert params[2] == "abc-123"  # session_id
+    assert params[3] == "alice"    # username
+    assert params[4] == "How do I win?"  # question
+    assert params[5] == "An answer."     # answer
+
+
+# ── 14. Rate a turn up ─────────────────────────────────────────────────────────
+
+@patch("routers.ask.get_connection")
+def test_rate_turn_up(mock_conn):
+    cur = MagicMock()
+    cur.fetchone.return_value = (TURN_ID,)
+    mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
+
+    resp = client.patch(f"/ask/turns/{TURN_ID}/rating", json={"rating": "up"})
+    assert resp.status_code == 200
+    assert resp.json() == {"turn_id": TURN_ID, "rating": "up"}
+
+
+# ── 15. Clear a rating ─────────────────────────────────────────────────────────
+
+@patch("routers.ask.get_connection")
+def test_rate_turn_clear(mock_conn):
+    cur = MagicMock()
+    cur.fetchone.return_value = (TURN_ID,)
+    mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
+
+    resp = client.patch(f"/ask/turns/{TURN_ID}/rating", json={"rating": None})
+    assert resp.status_code == 200
+    assert resp.json() == {"turn_id": TURN_ID, "rating": None}
+
+
+# ── 16. Invalid rating value rejected ──────────────────────────────────────────
+
+def test_rate_turn_invalid_value():
+    resp = client.patch(f"/ask/turns/{TURN_ID}/rating", json={"rating": "sideways"})
+    assert resp.status_code == 400
+
+
+# ── 17. Rating a nonexistent turn returns 404 ──────────────────────────────────
+
+@patch("routers.ask.get_connection")
+def test_rate_turn_not_found(mock_conn):
+    cur = MagicMock()
+    cur.fetchone.return_value = None
+    mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
+
+    resp = client.patch(f"/ask/turns/999/rating", json={"rating": "up"})
+    assert resp.status_code == 404

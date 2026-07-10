@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ChatMessage, Citation } from "./askTypes";
+import { ChatMessage, Citation, Rating } from "./askTypes";
 import CitationChip from "./CitationChip";
 import { HighlightTarget } from "./useHighlight";
 
@@ -9,6 +9,7 @@ interface Props {
   messages: ChatMessage[];
   activeHighlight: HighlightTarget | null;
   onCitationClick: (citation: Citation) => void;
+  onRate: (messageId: string, rating: Rating) => void;
   isLoading: boolean;
 }
 
@@ -53,7 +54,7 @@ function renderWithCitations(
   return parts;
 }
 
-export default function MessageList({ messages, activeHighlight, onCitationClick, isLoading }: Props) {
+export default function MessageList({ messages, activeHighlight, onCitationClick, onRate, isLoading }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,6 +87,26 @@ export default function MessageList({ messages, activeHighlight, onCitationClick
                   variant="card"
                 />
               ))}
+            </div>
+          )}
+          {msg.role === "assistant" && msg.turnId !== undefined && (
+            <div className="message-rating">
+              <button
+                className={`message-rating-btn${msg.rating === "up" ? " message-rating-btn--active" : ""}`}
+                aria-label="Thumbs up"
+                aria-pressed={msg.rating === "up"}
+                onClick={() => onRate(msg.id, "up")}
+              >
+                👍
+              </button>
+              <button
+                className={`message-rating-btn${msg.rating === "down" ? " message-rating-btn--active" : ""}`}
+                aria-label="Thumbs down"
+                aria-pressed={msg.rating === "down"}
+                onClick={() => onRate(msg.id, "down")}
+              >
+                👎
+              </button>
             </div>
           )}
         </div>

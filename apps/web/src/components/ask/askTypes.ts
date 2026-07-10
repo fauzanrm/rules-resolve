@@ -18,14 +18,19 @@ export interface Citation {
   end_canonical_index: number | null;
 }
 
+export type Rating = "up" | "down";
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "error";
   content: string;
   citations?: Citation[];
+  turnId?: number;
+  rating?: Rating | null;
 }
 
 export interface ChatQueryResponse {
+  turn_id: number;
   answer: string;
   citations: Citation[];
 }
