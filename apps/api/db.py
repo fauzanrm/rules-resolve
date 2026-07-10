@@ -1,8 +1,15 @@
 import os
+import time
 import psycopg2
 from psycopg2 import pool
 
 _pool = None
+
+# Admin dashboard fans out one /readiness/{id} request per chatroom concurrently,
+# so maxconn needs headroom above the chatroom count rather than a small fixed cap.
+_MAXCONN = 30
+_GETCONN_TIMEOUT_SECONDS = 5
+_GETCONN_RETRY_DELAY_SECONDS = 0.1
 
 
 def _get_pool():
@@ -10,7 +17,7 @@ def _get_pool():
     if _pool is None:
         _pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=1,
-            maxconn=10,
+            maxconn=_MAXCONN,
             dsn=os.environ["DATABASE_URL"],
         )
     return _pool
@@ -41,5 +48,12 @@ class _PooledConnection:
 
 def get_connection():
     conn_pool = _get_pool()
-    conn = conn_pool.getconn()
-    return _PooledConnection(conn_pool, conn)
+    deadline = time.monotonic() + _GETCONN_TIMEOUT_SECONDS
+    while True:
+        try:
+            conn = conn_pool.getconn()
+            return _PooledConnection(conn_pool, conn)
+        except psycopg2.pool.PoolError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_GETCONN_RETRY_DELAY_SECONDS)
