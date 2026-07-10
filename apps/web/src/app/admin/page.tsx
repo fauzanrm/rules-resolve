@@ -26,16 +26,14 @@ export default function AdminPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  function refreshReadiness(rooms: Chatroom[]) {
-    Promise.all(
-      rooms.map((r) =>
-        get<ChatroomReadiness>(`/readiness/${r.id}`).catch(() => null)
-      )
-    ).then((results) => {
-      const map: Record<number, ChatroomReadiness> = {};
-      results.forEach((r, i) => { if (r) map[rooms[i].id] = r; });
-      setReadinessMap(map);
-    });
+  function refreshReadiness() {
+    get<ChatroomReadiness[]>("/readiness")
+      .then((results) => {
+        const map: Record<number, ChatroomReadiness> = {};
+        results.forEach((r) => { map[r.chatroom_id] = r; });
+        setReadinessMap(map);
+      })
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -52,7 +50,7 @@ export default function AdminPage() {
     get<Chatroom[]>("/chatrooms/")
       .then((rooms) => {
         setChatrooms(rooms);
-        refreshReadiness(rooms);
+        refreshReadiness();
       })
       .catch(() => setFetchError(true));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

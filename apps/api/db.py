@@ -5,9 +5,10 @@ from psycopg2 import pool
 
 _pool = None
 
-# Admin dashboard fans out one /readiness/{id} request per chatroom concurrently,
-# so maxconn needs headroom above the chatroom count rather than a small fixed cap.
-_MAXCONN = 30
+# DATABASE_URL points at Supabase's session-mode pooler, which enforces its own
+# hard server-side cap of 15 concurrent client connections regardless of what we
+# ask for here — stay comfortably under that rather than trying to out-provision it.
+_MAXCONN = 10
 _GETCONN_TIMEOUT_SECONDS = 5
 _GETCONN_RETRY_DELAY_SECONDS = 0.1
 

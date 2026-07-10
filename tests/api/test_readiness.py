@@ -102,3 +102,36 @@ def test_readiness_missing_embeddings_not_complete(mock_conn):
     data = resp.json()
     assert data["stages"]["embeddings"]["complete"] is False
     assert data["is_ask_ready"] is False
+
+
+@patch("routers.readiness.get_connection")
+def test_readiness_bulk_single_connection(mock_conn):
+    # chatroom_id, published_at, pdf_ts, rw_ts, cw_ts, nodes_ts, chunks_ts, emb_ts, doc_id
+    ranked_rows = [
+        (1, T_PUB, T1, T2, T3, T4, T5, T6, 7),
+        (2, None, T1, None, None, None, None, None, 8),
+        (3, T_PUB, None, None, None, None, None, None, None),  # no document at all
+    ]
+    cur = MagicMock()
+    cur.fetchall.side_effect = [
+        ranked_rows,
+        [(7, 3)],  # chunk_counts
+        [(7, 3)],  # embedding_counts
+    ]
+    mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cur
+
+    resp = client.get("/readiness")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 3
+
+    by_id = {d["chatroom_id"]: d for d in data}
+    assert by_id[1]["is_ask_ready"] is True
+    assert by_id[2]["is_ask_ready"] is False
+    assert by_id[2]["stages"]["raw_words"]["complete"] is False
+    assert by_id[3]["is_ask_ready"] is False
+    for key in ["pdf", "raw_words", "canonical_words", "nodes", "chunks", "embeddings"]:
+        assert by_id[3]["stages"][key]["complete"] is False
+
+    # single connection acquired for the whole batch, not one per chatroom
+    assert mock_conn.call_count == 1
