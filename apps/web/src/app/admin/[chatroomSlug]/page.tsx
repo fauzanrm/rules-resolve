@@ -181,6 +181,9 @@ export default function ConfigPage() {
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [unpublishModalOpen, setUnpublishModalOpen] = useState(false);
+  const [isUnpublishing, setIsUnpublishing] = useState(false);
+  const [unpublishError, setUnpublishError] = useState<string | null>(null);
 
   // Toast notifications
   type ToastItem = { id: string; message: string };
@@ -304,6 +307,22 @@ export default function ConfigPage() {
       setPublishError(msg);
     } finally {
       setIsPublishing(false);
+    }
+  }
+
+  async function handleUnpublish() {
+    if (!chatroomId || isUnpublishing) return;
+    setIsUnpublishing(true);
+    setUnpublishError(null);
+    try {
+      const result = await post<{ published_at: string | null }>(`/chatrooms/${chatroomId}/unpublish`, {});
+      setPublishedAt(result.published_at);
+      setUnpublishModalOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to unpublish.";
+      setUnpublishError(msg);
+    } finally {
+      setIsUnpublishing(false);
     }
   }
 
@@ -1594,24 +1613,37 @@ export default function ConfigPage() {
               {publishedAt && isPublishReady && (
                 <span className="published-badge">Published</span>
               )}
-              <button
-                className="publish-btn"
-                disabled={!isPublishReady || isPublishing}
-                onClick={() => setPublishModalOpen(true)}
-                title={
-                  isPublishReady
-                    ? "Publish this chatroom to enable the Ask action"
-                    : `Blocking: ${blockingStages.join(", ")}`
-                }
-              >
-                {isPublishing ? "Publishing…" : publishedAt && isPublishReady ? "Republish" : "Publish"}
-              </button>
+              <div className="publish-actions">
+                <button
+                  className="publish-btn"
+                  disabled={!isPublishReady || isPublishing}
+                  onClick={() => setPublishModalOpen(true)}
+                  title={
+                    isPublishReady
+                      ? "Publish this chatroom to enable the Ask action"
+                      : `Blocking: ${blockingStages.join(", ")}`
+                  }
+                >
+                  {isPublishing ? "Publishing…" : publishedAt && isPublishReady ? "Republish" : "Publish"}
+                </button>
+                {publishedAt && (
+                  <button
+                    className="unpublish-btn"
+                    disabled={isUnpublishing}
+                    onClick={() => setUnpublishModalOpen(true)}
+                    title="Unpublish this chatroom and disable the Ask action"
+                  >
+                    {isUnpublishing ? "Unpublishing…" : "Unpublish"}
+                  </button>
+                )}
+              </div>
               {!isPublishReady && blockingStages.length > 0 && (
                 <p className="publish-blocked-hint">
                   Needs: {blockingStages.join(", ")}
                 </p>
               )}
               {publishError && <p className="publish-error">{publishError}</p>}
+              {unpublishError && <p className="publish-error">{unpublishError}</p>}
             </div>
           </div>
 
@@ -2579,6 +2611,40 @@ export default function ConfigPage() {
                 disabled={isPublishing}
               >
                 {isPublishing ? "Publishing…" : "Publish"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unpublish confirmation modal */}
+      {unpublishModalOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-header">
+              <h2>Unpublish Chatroom?</h2>
+            </div>
+            <div className="modal-body">
+              <p>
+                This will unpublish <strong>{chatroomName}</strong> and disable the Ask
+                action for this chatroom until it is republished.
+              </p>
+              {unpublishError && <p className="commit-error">{unpublishError}</p>}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="modal-cancel-btn"
+                onClick={() => { setUnpublishModalOpen(false); setUnpublishError(null); }}
+                disabled={isUnpublishing}
+              >
+                Cancel
+              </button>
+              <button
+                className="modal-confirm-btn"
+                onClick={handleUnpublish}
+                disabled={isUnpublishing}
+              >
+                {isUnpublishing ? "Unpublishing…" : "Unpublish"}
               </button>
             </div>
           </div>
