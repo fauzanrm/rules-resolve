@@ -80,6 +80,7 @@ FEEDBACK_CATEGORIES = {
     "wrong_citation",
     "unclear_response",
     "misunderstood_question",
+    "other",
 }
 
 
