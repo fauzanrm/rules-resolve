@@ -20,6 +20,21 @@ export interface Citation {
 
 export type Rating = "up" | "down";
 
+export type FeedbackCategory =
+  | "incorrect_answer"
+  | "missing_information"
+  | "wrong_citation"
+  | "unclear_response"
+  | "misunderstood_question";
+
+export const FEEDBACK_CATEGORIES: { value: FeedbackCategory; label: string }[] = [
+  { value: "incorrect_answer", label: "Incorrect rules answer" },
+  { value: "missing_information", label: "Missing or incomplete information" },
+  { value: "wrong_citation", label: "Cited wrong rule/section" },
+  { value: "unclear_response", label: "Confusing or unclear response" },
+  { value: "misunderstood_question", label: "Off-topic / misunderstood question" },
+];
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "error";

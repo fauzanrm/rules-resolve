@@ -74,6 +74,20 @@ class RatingRequest(BaseModel):
     rating: Optional[str] = None
 
 
+FEEDBACK_CATEGORIES = {
+    "incorrect_answer",
+    "missing_information",
+    "wrong_citation",
+    "unclear_response",
+    "misunderstood_question",
+}
+
+
+class FeedbackRequest(BaseModel):
+    category: Optional[str] = None
+    details: Optional[str] = None
+
+
 def _assert_published(chatroom_slug: str) -> tuple[int, int]:
     """Resolve (chatroom_id, document_id) from slug. Enforce published state and embeddings."""
     with get_connection() as conn:
@@ -435,3 +449,27 @@ def rate_turn(turn_id: int, body: RatingRequest):
         raise HTTPException(status_code=404, detail="Chat turn not found")
 
     return {"turn_id": turn_id, "rating": body.rating}
+
+
+@router.patch("/turns/{turn_id}/feedback")
+def submit_feedback(turn_id: int, body: FeedbackRequest):
+    if body.category is not None and body.category not in FEEDBACK_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Invalid feedback category")
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE chat_turns
+                SET feedback_category = %s, feedback_text = %s
+                WHERE id = %s
+                RETURNING id
+                """,
+                (body.category, body.details, turn_id),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Chat turn not found")
+
+    return {"turn_id": turn_id, "category": body.category, "details": body.details}

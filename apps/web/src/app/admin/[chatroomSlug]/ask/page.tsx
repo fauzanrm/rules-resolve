@@ -9,6 +9,7 @@ import PdfViewer, { PdfViewerHandle } from "@/components/ask/PdfViewer";
 import MessageList from "@/components/ask/MessageList";
 import ChatInput from "@/components/ask/ChatInput";
 import { useChat } from "@/components/ask/useChat";
+import ThumbsDownFeedbackModal from "@/components/ask/ThumbsDownFeedbackModal";
 import { useHighlight } from "@/components/ask/useHighlight";
 import { Citation } from "@/components/ask/askTypes";
 
@@ -38,7 +39,15 @@ export default function AskPage() {
   const [loading, setLoading] = useState(true);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
-  const { messages, sendMessage, rateMessage, isLoading } = useChat(chatroomSlug);
+  const {
+    messages,
+    sendMessage,
+    rateMessage,
+    isLoading,
+    feedbackTurnId,
+    closeFeedbackModal,
+    submitFeedback,
+  } = useChat(chatroomSlug);
   const { active: activeHighlight, highlight } = useHighlight();
 
   useEffect(() => {
@@ -148,6 +157,11 @@ export default function AskPage() {
           <ChatInput onSubmit={sendMessage} disabled={isLoading} />
         </section>
       </main>
+      <ThumbsDownFeedbackModal
+        open={feedbackTurnId !== null}
+        onClose={closeFeedbackModal}
+        onSubmit={submitFeedback}
+      />
     </div>
   );
 }

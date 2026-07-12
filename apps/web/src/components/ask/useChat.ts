@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { patch, post } from "@/lib/api";
 import { getSession } from "@/lib/auth";
-import { ChatMessage, ChatQueryResponse, Rating } from "./askTypes";
+import { ChatMessage, ChatQueryResponse, FeedbackCategory, Rating } from "./askTypes";
 
 function uid(): string {
   return Math.random().toString(36).slice(2);
@@ -23,6 +23,7 @@ function uuidv4(): string {
 export function useChat(chatroomSlug: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [feedbackTurnId, setFeedbackTurnId] = useState<number | null>(null);
   const sessionIdRef = useRef<string>(uuidv4());
 
   async function sendMessage(content: string) {
@@ -78,6 +79,9 @@ export function useChat(chatroomSlug: string) {
 
     try {
       await patch(`/ask/turns/${target.turnId}/rating`, { rating: nextRating });
+      if (nextRating === "down") {
+        setFeedbackTurnId(target.turnId);
+      }
     } catch {
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, rating: target.rating ?? null } : m))
@@ -85,5 +89,28 @@ export function useChat(chatroomSlug: string) {
     }
   }
 
-  return { messages, sendMessage, rateMessage, isLoading };
+  function closeFeedbackModal() {
+    setFeedbackTurnId(null);
+  }
+
+  async function submitFeedback(category: FeedbackCategory | null, details: string) {
+    if (feedbackTurnId === null) return;
+    const turnId = feedbackTurnId;
+    setFeedbackTurnId(null);
+    try {
+      await patch(`/ask/turns/${turnId}/feedback`, { category, details: details || null });
+    } catch {
+      // Feedback is best-effort; the rating itself was already recorded.
+    }
+  }
+
+  return {
+    messages,
+    sendMessage,
+    rateMessage,
+    isLoading,
+    feedbackTurnId,
+    closeFeedbackModal,
+    submitFeedback,
+  };
 }
