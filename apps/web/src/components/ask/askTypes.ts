@@ -25,7 +25,8 @@ export type FeedbackCategory =
   | "missing_information"
   | "wrong_citation"
   | "unclear_response"
-  | "misunderstood_question";
+  | "misunderstood_question"
+  | "other";
 
 export const FEEDBACK_CATEGORIES: { value: FeedbackCategory; label: string }[] = [
   { value: "incorrect_answer", label: "Incorrect rules answer" },
@@ -33,6 +34,7 @@ export const FEEDBACK_CATEGORIES: { value: FeedbackCategory; label: string }[] =
   { value: "wrong_citation", label: "Cited wrong rule/section" },
   { value: "unclear_response", label: "Confusing or unclear response" },
   { value: "misunderstood_question", label: "Off-topic / misunderstood question" },
+  { value: "other", label: "Other" },
 ];
 
 export interface ChatMessage {
