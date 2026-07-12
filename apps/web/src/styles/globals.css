@@ -1752,6 +1752,11 @@ input[type="file"] {
   letter-spacing: 0.05em;
 }
 
+.publish-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .publish-btn {
   align-self: flex-start;
   background: #16a34a;
@@ -1770,6 +1775,28 @@ input[type="file"] {
 }
 
 .publish-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.unpublish-btn {
+  align-self: flex-start;
+  background: #fff;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.45rem 1rem;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.unpublish-btn:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.unpublish-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

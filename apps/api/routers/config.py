@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel
 
-from db import get_connection
+from db import get_connection, unpublish_chatroom
 from storage import BUCKET, get_supabase, get_signed_url, upload_file
 from routers.raw_words import purge_raw_words
 from routers.canonical_words import purge_canonical_words
@@ -222,6 +222,7 @@ async def commit_pdf(chatroom_slug: str, file: UploadFile = File(...)):
                         "INSERT INTO chatroom_documents (chatroom_id, document_id) VALUES (%s, %s)",
                         (chatroom_id, doc_id),
                     )
+                unpublish_chatroom(cur, chatroom_id)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save document metadata")
 

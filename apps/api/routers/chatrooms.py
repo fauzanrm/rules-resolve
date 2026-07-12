@@ -264,3 +264,41 @@ def publish_chatroom(chatroom_id: int):
         cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
 
     return Chatroom(id=chatroom_id_out, name=name, cover_image_url=cover_url, published_at=published_at)
+
+
+@router.post("/{chatroom_id}/unpublish", response_model=Chatroom)
+def unpublish_chatroom(chatroom_id: int):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE chatrooms
+                    SET published_at = NULL
+                    WHERE id = %s
+                    RETURNING id, name, published_at
+                    """,
+                    (chatroom_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Chatroom not found")
+                chatroom_id_out, name, published_at = row
+
+                cur.execute(
+                    "SELECT MIN(document_id) FROM chatroom_documents WHERE chatroom_id = %s",
+                    (chatroom_id,),
+                )
+                doc_row = cur.fetchone()
+                first_document_id = doc_row[0] if doc_row else None
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unpublish chatroom: {e}")
+
+    supabase = get_supabase()
+    cover_url = None
+    if supabase and first_document_id is not None:
+        cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
+
+    return Chatroom(id=chatroom_id_out, name=name, cover_image_url=cover_url, published_at=published_at)

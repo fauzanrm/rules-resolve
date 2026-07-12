@@ -3,7 +3,7 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from db import get_connection
+from db import get_connection, unpublish_chatroom
 
 router = APIRouter()
 
@@ -230,6 +230,7 @@ def commit_nodes(chatroom_id: int, body: CommitNodesRequest):
                 """,
                 (document_id,),
             )
+            unpublish_chatroom(cur, chatroom_id)
 
     from routers.chunks import purge_chunk_assignments
     purge_chunk_assignments(document_id)

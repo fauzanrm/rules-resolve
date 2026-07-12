@@ -6,7 +6,7 @@ import fitz
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from db import get_connection
+from db import get_connection, unpublish_chatroom
 from storage import BUCKET, get_supabase, upload_file
 
 router = APIRouter()
@@ -310,6 +310,7 @@ def commit_raw_words(chatroom_id: int, body: CommitRequest):
                     """,
                     (document_id,),
                 )
+                unpublish_chatroom(cur, chatroom_id)
     except Exception:
         pass
 
