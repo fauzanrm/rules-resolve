@@ -558,6 +558,8 @@ export default function ConfigPage() {
       setEmbeddingsState(null);
       setEmbeddingsStatus("idle");
       setEmbeddingsError(null);
+      // Committing a new source PDF auto-unpublishes the chatroom server-side
+      setPublishedAt(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Commit failed. Please try again.";
       setCommitError(msg);
@@ -732,6 +734,8 @@ export default function ConfigPage() {
       setEmbeddingsState(null);
       setEmbeddingsStatus("idle");
       setEmbeddingsError(null);
+      // Recommitting raw words auto-unpublishes the chatroom server-side
+      setPublishedAt(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -873,6 +877,8 @@ export default function ConfigPage() {
       setEmbeddingsState(null);
       setEmbeddingsStatus("idle");
       setEmbeddingsError(null);
+      // Recommitting canonical words auto-unpublishes the chatroom server-side
+      setPublishedAt(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -1190,6 +1196,8 @@ export default function ConfigPage() {
       // Clear working chunk assignments (node indices are now stale); committedChunks
       // intentionally not cleared so isChunksDirty becomes true and forces a recommit.
       setWorkingChunks((prev) => prev ? prev.map((c) => ({ ...c, assignedNodeIndex: null })) : prev);
+      // Recommitting the outline auto-unpublishes the chatroom server-side
+      setPublishedAt(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -1351,6 +1359,8 @@ export default function ConfigPage() {
       }));
       setEmbeddingsStatus("idle");
       setEmbeddingsError(null);
+      // Recommitting chunks auto-unpublishes the chatroom server-side
+      setPublishedAt(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError
@@ -1371,6 +1381,8 @@ export default function ConfigPage() {
       const result = await post<EmbeddingsApiState>(`/embeddings/${chatroomId}/generate`, {});
       setEmbeddingsState(result);
       setEmbeddingsStatus("success");
+      // Regenerating embeddings auto-unpublishes the chatroom server-side
+      setPublishedAt(null);
     } catch (err: unknown) {
       const msg =
         err instanceof ApiError

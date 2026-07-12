@@ -58,3 +58,16 @@ def get_connection():
             if time.monotonic() >= deadline:
                 raise
             time.sleep(_GETCONN_RETRY_DELAY_SECONDS)
+
+
+def unpublish_chatroom(cur, chatroom_id: int) -> None:
+    """Clear a chatroom's published state.
+
+    Call this from any pipeline-stage commit endpoint (PDF, raw words,
+    canonical words, nodes, chunks, embeddings) so a published Ask session
+    never keeps serving answers grounded in upstream data that just changed.
+    """
+    cur.execute(
+        "UPDATE chatrooms SET published_at = NULL WHERE id = %s AND published_at IS NOT NULL",
+        (chatroom_id,),
+    )

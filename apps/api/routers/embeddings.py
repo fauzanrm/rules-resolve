@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from openai import OpenAI
 from pydantic import BaseModel
 
-from db import get_connection
+from db import get_connection, unpublish_chatroom
 
 router = APIRouter()
 
@@ -230,6 +230,7 @@ def generate_embeddings(chatroom_id: int):
                         """,
                         ("text-embedding-3-small", document_id),
                     )
+                    unpublish_chatroom(cur, chatroom_id)
         except HTTPException:
             raise
         except Exception as e:

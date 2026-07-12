@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from db import get_connection
+from db import get_connection, unpublish_chatroom
 
 router = APIRouter()
 
@@ -221,6 +221,7 @@ def commit_chunks(chatroom_id: int, body: CommitChunksRequest):
                 """,
                 (document_id,),
             )
+            unpublish_chatroom(cur, chatroom_id)
 
     return ChunksState(
         chatroom_id=chatroom_id,
