@@ -21,10 +21,11 @@ interface Props {
   getPageImageUrl: ((page: number) => string) | null;
   pageCount: number;
   highlight: HighlightTarget | null;
+  displayWidth?: number;
 }
 
 const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
-  { getPageImageUrl, pageCount, highlight },
+  { getPageImageUrl, pageCount, highlight, displayWidth = DISPLAY_WIDTH },
   ref
 ) {
   const pageElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -70,7 +71,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
     // Scale from PDF points → display pixels
     // dims.width is naturalWidth (rendered at RENDER_SCALE×), so PDF points = dims.width / RENDER_SCALE
-    const scale = DISPLAY_WIDTH / (dims.width / RENDER_SCALE);
+    const scale = displayWidth / (dims.width / RENDER_SCALE);
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -84,7 +85,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       ctx.fillRect(x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale);
       ctx.strokeRect(x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale);
     }
-  }, [highlight, pageDims]);
+  }, [highlight, pageDims, displayWidth]);
 
   function handleImageLoad(page: number, e: React.SyntheticEvent<HTMLImageElement>) {
     const img = e.currentTarget;
@@ -101,8 +102,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       // Canvas pixel dimensions match the displayed image size
       const pdfWidth = dims.width / RENDER_SCALE;
       const pdfHeight = dims.height / RENDER_SCALE;
-      const displayScale = DISPLAY_WIDTH / pdfWidth;
-      canvas.width = DISPLAY_WIDTH;
+      const displayScale = displayWidth / pdfWidth;
+      canvas.width = displayWidth;
       canvas.height = pdfHeight * displayScale;
     }
   }
@@ -116,8 +117,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         const pdfWidth = dims ? dims.width / RENDER_SCALE : null;
         const pdfHeight = dims ? dims.height / RENDER_SCALE : null;
         const displayHeight = pdfWidth && pdfHeight
-          ? pdfHeight * (DISPLAY_WIDTH / pdfWidth)
-          : DISPLAY_WIDTH * 1.414; // A4 fallback aspect ratio
+          ? pdfHeight * (displayWidth / pdfWidth)
+          : displayWidth * 1.414; // A4 fallback aspect ratio
 
         const imageUrl = getPageImageUrl ? getPageImageUrl(page) : null;
 
@@ -126,7 +127,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
             key={page}
             ref={(el) => setPageRef(page, el)}
             className="pdf-page-wrapper"
-            style={{ width: DISPLAY_WIDTH, height: displayHeight, position: "relative" }}
+            style={{ width: displayWidth, height: displayHeight, position: "relative" }}
           >
             {imageUrl ? (
               <>
