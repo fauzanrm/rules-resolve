@@ -1910,6 +1910,140 @@ input[type="file"] {
   overflow: hidden;
 }
 
+/* ── Ask mobile header ───────────────────────────────────────────────────── */
+
+.ask-mobile-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  height: 52px;
+  flex-shrink: 0;
+}
+
+.ask-mobile-back-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: #1a1a1a;
+}
+
+.ask-mobile-header-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-mobile-pdf-btn {
+  flex-shrink: 0;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  color: #1a1a1a;
+}
+
+.ask-mobile-pdf-btn:hover {
+  background: #e5e5e5;
+}
+
+/* ── Ask mobile main (chat-only) ─────────────────────────────────────────── */
+
+.ask-mobile-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── PDF bottom sheet ────────────────────────────────────────────────────── */
+
+.pdf-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 300;
+}
+
+.pdf-sheet-backdrop--open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pdf-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 88vh;
+  background: #f9fafb;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.28s ease;
+  z-index: 301;
+  touch-action: none;
+}
+
+.pdf-sheet--open {
+  transform: translateY(0);
+}
+
+.pdf-sheet--dragging {
+  transition: none;
+}
+
+.pdf-sheet-grabber-area {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.pdf-sheet-grabber {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: #d0d0d0;
+}
+
+.pdf-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 /* ── PDF viewer ──────────────────────────────────────────────────────────── */
 
 .pdf-viewer-container {
