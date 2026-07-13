@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { getSession, getRoleRoute, Role } from "@/lib/auth";
 import { get } from "@/lib/api";
 import Navbar from "@/components/Navbar";
 import PdfViewer, { PdfViewerHandle } from "@/components/ask/PdfViewer";
@@ -37,6 +37,7 @@ export default function AskPage() {
   const [pageData, setPageData] = useState<ConfigPageData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<Role | null>(null);
 
   const viewerRef = useRef<PdfViewerHandle>(null);
   const {
@@ -56,10 +57,7 @@ export default function AskPage() {
       router.replace("/login");
       return;
     }
-    if (session.role === "user") {
-      router.replace("/under-construction");
-      return;
-    }
+    setRole(session.role);
 
     get<ConfigPageData>(`/config/${chatroomSlug}`)
       .then((data) => {
@@ -77,10 +75,12 @@ export default function AskPage() {
     viewerRef.current?.goToPage(citation.page);
   }
 
+  const homeRoute = role ? getRoleRoute(role) : "/admin";
+
   if (loading) {
     return (
       <div className="ask-page">
-        <Navbar onBack={() => router.push("/admin")} />
+        <Navbar onBack={() => router.push(homeRoute)} />
         <main className="ask-main ask-main--centered">
           <p className="ask-status-text">Loading…</p>
         </main>
@@ -91,12 +91,12 @@ export default function AskPage() {
   if (loadError || !pageData) {
     return (
       <div className="ask-page">
-        <Navbar onBack={() => router.push("/admin")} />
+        <Navbar onBack={() => router.push(homeRoute)} />
         <main className="ask-main ask-main--centered">
           <p className="ask-status-text ask-status-text--error">
             {loadError ?? "Chatroom not found."}
           </p>
-          <button className="ask-back-btn" onClick={() => router.push("/admin")}>
+          <button className="ask-back-btn" onClick={() => router.push(homeRoute)}>
             ← Back to chatrooms
           </button>
         </main>
@@ -110,7 +110,7 @@ export default function AskPage() {
     return (
       <div className="ask-page">
         <Navbar
-          onBack={() => router.push("/admin")}
+          onBack={() => router.push(homeRoute)}
           titleSlot={<span className="ask-chatroom-title">{pageData.chatroom_name}</span>}
         />
         <main className="ask-main ask-main--centered">
@@ -119,7 +119,7 @@ export default function AskPage() {
               ? "This chatroom is not published yet."
               : "This chatroom has no processed document."}
           </p>
-          <button className="ask-back-btn" onClick={() => router.push("/admin")}>
+          <button className="ask-back-btn" onClick={() => router.push(homeRoute)}>
             ← Back to chatrooms
           </button>
         </main>
@@ -134,7 +134,7 @@ export default function AskPage() {
   return (
     <div className="ask-page">
       <Navbar
-        onBack={() => router.push("/admin")}
+        onBack={() => router.push(homeRoute)}
         titleSlot={<span className="ask-chatroom-title">{chatroom_name}</span>}
       />
       <main className="ask-split-main">

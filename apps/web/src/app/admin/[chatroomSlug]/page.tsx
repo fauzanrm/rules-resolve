@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { getSession, getRoleRoute } from "@/lib/auth";
 import { get, post, postForm, patch, ApiError } from "@/lib/api";
 import Navbar from "@/components/Navbar";
 import RawWordsOverlay from "@/components/config/RawWordsOverlay";
@@ -333,7 +333,7 @@ export default function ConfigPage() {
       return;
     }
     if (session.role === "user") {
-      router.replace("/under-construction");
+      router.replace(getRoleRoute(session.role));
       return;
     }
 

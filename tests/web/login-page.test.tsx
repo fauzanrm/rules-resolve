@@ -15,7 +15,7 @@ jest.mock("@/lib/auth", () => ({
   getSession: jest.fn().mockReturnValue(null),
   setSession: jest.fn(),
   clearSession: jest.fn(),
-  getRoleRoute: jest.fn((role: string) => (role === "admin" ? "/admin" : "/under-construction")),
+  getRoleRoute: jest.fn((role: string) => (role === "admin" ? "/admin" : "/chatrooms")),
 }));
 
 jest.mock("@/lib/api", () => {
@@ -91,11 +91,11 @@ test("valid admin credentials show success toast and redirect to /admin", async 
 });
 
 // 5. Successful user login
-test("valid user credentials redirect to /under-construction", async () => {
+test("valid user credentials redirect to /chatrooms", async () => {
   jest.useFakeTimers();
   const user = userEvent.setup({ delay: null });
   (apiLib.post as jest.Mock).mockResolvedValue({ role: "user", username: "regularuser" });
-  (authLib.getRoleRoute as jest.Mock).mockReturnValue("/under-construction");
+  (authLib.getRoleRoute as jest.Mock).mockReturnValue("/chatrooms");
 
   render(<LoginPage />);
 
@@ -109,7 +109,7 @@ test("valid user credentials redirect to /under-construction", async () => {
   });
 
   act(() => jest.advanceTimersByTime(1500));
-  expect(mockPush).toHaveBeenCalledWith("/under-construction");
+  expect(mockPush).toHaveBeenCalledWith("/chatrooms");
 
   jest.useRealTimers();
 });

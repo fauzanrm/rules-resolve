@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { getSession, getRoleRoute } from "@/lib/auth";
 import { get, postForm } from "@/lib/api";
 import Navbar from "@/components/Navbar";
 import ChatroomCard, { ChatroomReadiness } from "@/components/ChatroomCard";
@@ -43,7 +43,7 @@ export default function AdminPage() {
       return;
     }
     if (session.role === "user") {
-      router.replace("/under-construction");
+      router.replace(getRoleRoute(session.role));
       return;
     }
 

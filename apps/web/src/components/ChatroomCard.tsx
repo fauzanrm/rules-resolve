@@ -52,12 +52,15 @@ interface ChatroomCardProps {
   name: string;
   coverImageUrl?: string | null;
   readiness?: ChatroomReadiness | null;
+  /** Read-only end-user mode: no configure/ask controls or status indicators; the whole card opens the chatroom directly. */
+  viewOnly?: boolean;
 }
 
 export default function ChatroomCard({
   name,
   coverImageUrl = null,
   readiness = null,
+  viewOnly = false,
 }: ChatroomCardProps) {
   const router = useRouter();
   const slug = slugify(name);
@@ -68,6 +71,32 @@ export default function ChatroomCard({
     : readiness?.published_at
       ? "This chatroom is unpublished — pipeline stages changed after last publish."
       : "Complete all processing steps and publish this chatroom first.";
+
+  if (viewOnly) {
+    return (
+      <div
+        className="chatroom-card chatroom-card--viewonly"
+        role="button"
+        tabIndex={0}
+        onClick={() => router.push(`/admin/${slug}/ask`)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            router.push(`/admin/${slug}/ask`);
+          }
+        }}
+      >
+        {coverImageUrl ? (
+          <img className="card-image" src={coverImageUrl} alt={name} />
+        ) : (
+          <div className="card-fallback" aria-hidden="true" />
+        )}
+        <div className="card-info">
+          <span className="card-name">{name}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="chatroom-card">

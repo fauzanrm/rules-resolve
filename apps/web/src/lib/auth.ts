@@ -29,5 +29,5 @@ export function clearSession(): void {
 }
 
 export function getRoleRoute(role: Role): string {
-  return role === "admin" ? "/admin" : "/under-construction";
+  return role === "admin" ? "/admin" : "/chatrooms";
 }
