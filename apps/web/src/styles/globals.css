@@ -1894,12 +1894,9 @@ input[type="file"] {
   flex: 0 0 55%;
   min-height: 0;
   border-right: 1px solid #e5e7eb;
-  overflow-y: auto;
   background: #f9fafb;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1rem 0;
+  position: relative;
+  overflow: hidden;
 }
 
 .ask-chat-panel {
@@ -2005,7 +2002,6 @@ input[type="file"] {
   transform: translateY(100%);
   transition: transform 0.28s ease;
   z-index: 301;
-  touch-action: none;
 }
 
 .pdf-sheet--open {
@@ -2036,22 +2032,29 @@ input[type="file"] {
 .pdf-sheet-body {
   flex: 1;
   min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── PDF viewer ──────────────────────────────────────────────────────────── */
+
+.pdf-viewer-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pdf-viewer-container {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-
-/* ── PDF viewer ──────────────────────────────────────────────────────────── */
-
-.pdf-viewer-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 1rem;
-  width: 100%;
   padding: 1rem 0 2rem;
 }
 
@@ -2059,6 +2062,65 @@ input[type="file"] {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   background: #fff;
   flex-shrink: 0;
+}
+
+.pdf-viewer-zoom-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  background: #f3f4f6;
+}
+
+.pdf-viewer-zoom-viewport:active {
+  cursor: grabbing;
+}
+
+.pdf-viewer-zoom-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.pdf-viewer-toolbar {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #e0e0e0;
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.pdf-viewer-toolbar-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pdf-viewer-toolbar-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.pdf-viewer-toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ── Message list ────────────────────────────────────────────────────────── */

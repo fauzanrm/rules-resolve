@@ -94,7 +94,7 @@ export default function AskPage() {
 
   function handleCitationClick(citation: Citation) {
     highlight(citation);
-    viewerRef.current?.goToPage(citation.page);
+    viewerRef.current?.focusOnWords(citation.page, citation.words);
     setPdfSheetOpen(true);
   }
 
