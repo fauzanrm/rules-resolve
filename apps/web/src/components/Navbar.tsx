@@ -1,8 +1,8 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { clearSession } from "@/lib/auth";
+import { clearSession, getSession, Role } from "@/lib/auth";
 
 interface NavbarProps {
   onBack?: () => void;
@@ -11,6 +11,11 @@ interface NavbarProps {
 
 export default function Navbar({ onBack, titleSlot }: NavbarProps = {}) {
   const router = useRouter();
+  const [role, setRole] = useState<Role | null>(null);
+
+  useEffect(() => {
+    setRole(getSession()?.role ?? null);
+  }, []);
 
   function handleLogout() {
     clearSession();
@@ -31,7 +36,8 @@ export default function Navbar({ onBack, titleSlot }: NavbarProps = {}) {
         {titleSlot && <div className="navbar-context">{titleSlot}</div>}
       </div>
       <div className="navbar-right">
-        <span className="admin-badge">Admin</span>
+        {role === "admin" && <span className="admin-badge">Admin</span>}
+        {role === "user" && <span className="user-badge">User</span>}
         <button className="logout-btn" onClick={handleLogout}>
           Log out
         </button>
