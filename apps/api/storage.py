@@ -25,3 +25,7 @@ def get_signed_url(supabase, path: str) -> Optional[str]:
 
 def upload_file(supabase, path: str, data: bytes, content_type: str) -> None:
     supabase.storage.from_(BUCKET).upload(path, data, {"content-type": content_type, "upsert": "true"})
+
+
+def delete_file(supabase, path: str) -> None:
+    supabase.storage.from_(BUCKET).remove([path])

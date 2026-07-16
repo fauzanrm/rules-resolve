@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { getSession, getRoleRoute } from "@/lib/auth";
 import { get, postForm } from "@/lib/api";
 import Navbar from "@/components/Navbar";
-import ChatroomCard, { ChatroomReadiness } from "@/components/ChatroomCard";
+import ChatroomCard, { ChatroomReadiness, ThumbnailResult } from "@/components/ChatroomCard";
 
 interface Chatroom {
   id: number;
   name: string;
   cover_image_url?: string | null;
+  has_custom_thumbnail?: boolean;
   published_at?: string | null;
 }
 
@@ -106,6 +107,16 @@ export default function AdminPage() {
 
   const canSave = newName.trim().length > 0 && newFile !== null && !creating;
 
+  function handleThumbnailChange(chatroomId: number, result: ThumbnailResult) {
+    setChatrooms((prev) =>
+      prev.map((c) =>
+        c.id === chatroomId
+          ? { ...c, cover_image_url: result.cover_image_url, has_custom_thumbnail: result.has_custom_thumbnail }
+          : c
+      )
+    );
+  }
+
   return (
     <div className="admin-page">
       <Navbar />
@@ -128,7 +139,9 @@ export default function AdminPage() {
                   chatroomId={c.id}
                   name={c.name}
                   coverImageUrl={c.cover_image_url}
+                  hasCustomThumbnail={c.has_custom_thumbnail}
                   readiness={readinessMap[c.id] ?? null}
+                  onThumbnailChange={(result) => handleThumbnailChange(c.id, result)}
                 />
               ))}
               <button className="add-chatroom-card" onClick={openAddModal}>

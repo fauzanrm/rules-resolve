@@ -8,9 +8,10 @@ from PIL import Image
 from pydantic import BaseModel
 
 from db import get_connection
-from storage import BUCKET, get_supabase, get_signed_url, upload_file
+from storage import BUCKET, get_supabase, get_signed_url, upload_file, delete_file
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+MAX_THUMBNAIL_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_NAME_LENGTH = 50
 
 router = APIRouter()
@@ -69,11 +70,33 @@ def _resolve_cover_url(supabase, chatroom_id: int, document_id: int) -> Optional
         return None
 
 
+def _thumbnail_path(chatroom_id: int) -> str:
+    return f"{chatroom_id}/thumbnail.webp"
+
+
+def _has_custom_thumbnail(supabase, chatroom_id: int) -> bool:
+    try:
+        files = supabase.storage.from_(BUCKET).list(str(chatroom_id), {"limit": 100, "offset": 0})
+        return any(f["name"] == "thumbnail.webp" for f in files)
+    except Exception:
+        return False
+
+
+def _resolve_thumbnail(supabase, chatroom_id: int, first_document_id: Optional[int]) -> tuple[Optional[str], bool]:
+    """A manually uploaded thumbnail overrides the auto-generated PDF cover."""
+    if _has_custom_thumbnail(supabase, chatroom_id):
+        return get_signed_url(supabase, _thumbnail_path(chatroom_id)), True
+    if first_document_id is not None:
+        return _resolve_cover_url(supabase, chatroom_id, first_document_id), False
+    return None, False
+
+
 class Chatroom(BaseModel):
     id: int
     name: str
     cover_image_url: Optional[str] = None
     published_at: Optional[datetime] = None
+    has_custom_thumbnail: bool = False
 
 
 @router.get("/", response_model=list[Chatroom])
@@ -98,10 +121,10 @@ def list_chatrooms():
 
     result = []
     for chatroom_id, name, published_at, first_document_id in rows:
-        cover_url = None
-        if supabase and first_document_id is not None:
-            cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
-        result.append(Chatroom(id=chatroom_id, name=name, cover_image_url=cover_url, published_at=published_at))
+        cover_url, has_custom = (None, False)
+        if supabase:
+            cover_url, has_custom = _resolve_thumbnail(supabase, chatroom_id, first_document_id)
+        result.append(Chatroom(id=chatroom_id, name=name, cover_image_url=cover_url, published_at=published_at, has_custom_thumbnail=has_custom))
 
     return result
 
@@ -221,11 +244,11 @@ def rename_chatroom(chatroom_id: int, body: RenameRequest):
         raise HTTPException(status_code=500, detail=f"Failed to rename chatroom: {e}")
 
     supabase = get_supabase()
-    cover_url = None
-    if supabase and first_document_id is not None:
-        cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
+    cover_url, has_custom = (None, False)
+    if supabase:
+        cover_url, has_custom = _resolve_thumbnail(supabase, chatroom_id, first_document_id)
 
-    return Chatroom(id=chatroom_id, name=new_name, cover_image_url=cover_url, published_at=published_at)
+    return Chatroom(id=chatroom_id, name=new_name, cover_image_url=cover_url, published_at=published_at, has_custom_thumbnail=has_custom)
 
 
 @router.post("/{chatroom_id}/publish", response_model=Chatroom)
@@ -259,11 +282,11 @@ def publish_chatroom(chatroom_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to publish chatroom: {e}")
 
     supabase = get_supabase()
-    cover_url = None
-    if supabase and first_document_id is not None:
-        cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
+    cover_url, has_custom = (None, False)
+    if supabase:
+        cover_url, has_custom = _resolve_thumbnail(supabase, chatroom_id, first_document_id)
 
-    return Chatroom(id=chatroom_id_out, name=name, cover_image_url=cover_url, published_at=published_at)
+    return Chatroom(id=chatroom_id_out, name=name, cover_image_url=cover_url, published_at=published_at, has_custom_thumbnail=has_custom)
 
 
 @router.post("/{chatroom_id}/unpublish", response_model=Chatroom)
@@ -297,8 +320,86 @@ def unpublish_chatroom(chatroom_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to unpublish chatroom: {e}")
 
     supabase = get_supabase()
-    cover_url = None
-    if supabase and first_document_id is not None:
-        cover_url = _resolve_cover_url(supabase, chatroom_id, first_document_id)
+    cover_url, has_custom = (None, False)
+    if supabase:
+        cover_url, has_custom = _resolve_thumbnail(supabase, chatroom_id, first_document_id)
 
-    return Chatroom(id=chatroom_id_out, name=name, cover_image_url=cover_url, published_at=published_at)
+    return Chatroom(id=chatroom_id_out, name=name, cover_image_url=cover_url, published_at=published_at, has_custom_thumbnail=has_custom)
+
+
+def _fetch_chatroom_for_thumbnail(cur, chatroom_id: int):
+    cur.execute(
+        """
+        SELECT c.id, c.name, c.published_at, MIN(cd.document_id) AS first_document_id
+        FROM chatrooms c
+        LEFT JOIN chatroom_documents cd ON cd.chatroom_id = c.id
+        WHERE c.id = %s
+        GROUP BY c.id, c.name, c.published_at
+        """,
+        (chatroom_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Chatroom not found")
+    return row  # (id, name, published_at, first_document_id)
+
+
+@router.post("/{chatroom_id}/thumbnail", response_model=Chatroom)
+async def upload_thumbnail(chatroom_id: int, file: UploadFile = File(...)):
+    contents = await file.read()
+
+    if len(contents) > MAX_THUMBNAIL_SIZE:
+        raise HTTPException(status_code=400, detail="Image exceeds 10 MB limit")
+
+    try:
+        image = Image.open(io.BytesIO(contents))
+        image = image.convert("RGB")
+        buf = io.BytesIO()
+        image.save(buf, format="webp")
+        thumbnail_bytes = buf.getvalue()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read image file")
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                _, name, published_at, _ = _fetch_chatroom_for_thumbnail(cur, chatroom_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load chatroom: {e}")
+
+    supabase = get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Storage is not configured")
+
+    try:
+        upload_file(supabase, _thumbnail_path(chatroom_id), thumbnail_bytes, "image/webp")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload thumbnail: {e}")
+
+    cover_url = get_signed_url(supabase, _thumbnail_path(chatroom_id))
+    return Chatroom(id=chatroom_id, name=name, cover_image_url=cover_url, published_at=published_at, has_custom_thumbnail=True)
+
+
+@router.delete("/{chatroom_id}/thumbnail", response_model=Chatroom)
+def revert_thumbnail(chatroom_id: int):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                _, name, published_at, first_document_id = _fetch_chatroom_for_thumbnail(cur, chatroom_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load chatroom: {e}")
+
+    supabase = get_supabase()
+    cover_url, has_custom = (None, False)
+    if supabase:
+        try:
+            delete_file(supabase, _thumbnail_path(chatroom_id))
+        except Exception:
+            pass
+        cover_url, has_custom = _resolve_thumbnail(supabase, chatroom_id, first_document_id)
+
+    return Chatroom(id=chatroom_id, name=name, cover_image_url=cover_url, published_at=published_at, has_custom_thumbnail=has_custom)
