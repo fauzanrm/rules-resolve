@@ -1,5 +1,7 @@
 "use client";
 
+import ReportIssueButton from "@/components/ReportIssueButton";
+
 interface Props {
   title: string;
   onBack: () => void;
@@ -13,9 +15,10 @@ export default function AskMobileHeader({ title, onBack, onOpenPdf }: Props) {
         ←
       </button>
       <span className="ask-mobile-header-title">{title}</span>
+      <ReportIssueButton />
       {onOpenPdf && (
         <button className="ask-mobile-pdf-btn" onClick={onOpenPdf}>
-          📄 PDF
+          View PDF
         </button>
       )}
     </nav>
