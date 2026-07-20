@@ -42,6 +42,8 @@ export function useChat(chatroomSlug: string) {
         history,
         session_id: sessionIdRef.current,
         username,
+        viewport_width: typeof window !== "undefined" ? window.innerWidth : undefined,
+        viewport_height: typeof window !== "undefined" ? window.innerHeight : undefined,
       });
       setMessages((prev) => [
         ...prev,

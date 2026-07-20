@@ -62,6 +62,8 @@ class ChatQueryRequest(BaseModel):
     history: list[ChatMessage] = []
     session_id: Optional[str] = None
     username: Optional[str] = None
+    viewport_width: Optional[int] = None
+    viewport_height: Optional[int] = None
 
 
 class ChatQueryResponse(BaseModel):
@@ -338,14 +340,17 @@ def _record_chat_turn(
     question: str,
     answer: str,
     citations: list[Citation],
+    viewport_width: Optional[int] = None,
+    viewport_height: Optional[int] = None,
 ) -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO chat_turns
-                    (chatroom_id, document_id, session_id, username, question, answer, citations)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (chatroom_id, document_id, session_id, username, question, answer, citations,
+                     viewport_width, viewport_height)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -356,6 +361,8 @@ def _record_chat_turn(
                     question,
                     answer,
                     Json([c.model_dump() for c in citations]),
+                    viewport_width,
+                    viewport_height,
                 ),
             )
             return cur.fetchone()[0]
@@ -379,6 +386,7 @@ def chat_query(chatroom_slug: str, body: ChatQueryRequest):
         answer = "I don't have enough information in the rulebook to answer that."
         turn_id = _record_chat_turn(
             chatroom_id, document_id, session_id, body.username, question, answer, [],
+            viewport_width=body.viewport_width, viewport_height=body.viewport_height,
         )
         return ChatQueryResponse(turn_id=turn_id, answer=answer, citations=[])
 
@@ -423,6 +431,7 @@ def chat_query(chatroom_slug: str, body: ChatQueryRequest):
 
     turn_id = _record_chat_turn(
         chatroom_id, document_id, session_id, body.username, question, answer, citations,
+        viewport_width=body.viewport_width, viewport_height=body.viewport_height,
     )
 
     return ChatQueryResponse(turn_id=turn_id, answer=answer, citations=citations)
