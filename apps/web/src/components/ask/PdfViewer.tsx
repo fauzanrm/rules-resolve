@@ -77,10 +77,23 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   }
 
   // Paints (or clears) the highlight rectangles for one page's canvas. Called
-  // both from the highlight-sync effect and right after an image load resizes
-  // the canvas backing store — resizing a canvas clears its contents, so the
-  // draw must be re-applied at that point too, using the size that was just set.
-  function paintHighlight(page: number, canvas: HTMLCanvasElement, natWidth: number) {
+  // both from the highlight-sync effect and right after an image load first
+  // establishes the page's natural dimensions. The canvas backing store is
+  // resized here (to the *current* zoom's pixel size) on every call, since
+  // zoom changes alone — with no new image load — must not leave it stale;
+  // a stale buffer gets re-stretched by the element's CSS width/height, which
+  // throws off both the highlight's scale and its offset.
+  function paintHighlight(page: number, canvas: HTMLCanvasElement, dims: Dims) {
+    const pdfWidth = dims.width / RENDER_SCALE;
+    const pdfHeight = dims.height / RENDER_SCALE;
+    const widthPx = widthForPage();
+    const scale = widthPx / pdfWidth;
+    const heightPx = pdfHeight * scale;
+    if (canvas.width !== widthPx || canvas.height !== heightPx) {
+      canvas.width = widthPx;
+      canvas.height = heightPx;
+    }
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -88,7 +101,6 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const h = highlightRef.current;
     if (!h || h.page !== page || h.words.length === 0) return;
 
-    const scale = widthForPage() / (natWidth / RENDER_SCALE);
     ctx.fillStyle = "rgba(255, 220, 0, 0.4)";
     ctx.strokeStyle = "rgba(200, 160, 0, 0.7)";
     ctx.lineWidth = 1;
@@ -338,7 +350,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     canvasRefs.current.forEach((canvas, page) => {
       const dims = pageDims.get(page);
       if (dims) {
-        paintHighlight(page, canvas, dims.width);
+        paintHighlight(page, canvas, dims);
       } else {
         const ctx = canvas.getContext("2d");
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -353,14 +365,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
     const canvas = canvasRefs.current.get(page);
     if (canvas) {
-      // Canvas pixel dimensions match the currently rendered display size
-      const pdfWidth = img.naturalWidth / RENDER_SCALE;
-      const pdfHeight = img.naturalHeight / RENDER_SCALE;
-      const widthPx = widthForPage();
-      const displayScale = widthPx / pdfWidth;
-      canvas.width = widthPx;
-      canvas.height = pdfHeight * displayScale;
-      paintHighlight(page, canvas, img.naturalWidth);
+      paintHighlight(page, canvas, { width: img.naturalWidth, height: img.naturalHeight });
     }
   }
 
