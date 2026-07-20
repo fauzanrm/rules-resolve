@@ -316,6 +316,50 @@ def test_chat_turn_recorded(mock_conn, mock_embed, mock_retrieve, mock_openai, m
     assert params[5] == "An answer."     # answer
 
 
+# ── 13b. Chat turn recorded with viewport dimensions passed through ───────────
+
+@patch("routers.ask._build_citation")
+@patch("routers.ask._call_openai")
+@patch("routers.ask._retrieve_chunks", return_value=SAMPLE_CHUNKS)
+@patch("routers.ask._embed_query", return_value=[0.1] * 1536)
+@patch("routers.ask.get_connection")
+def test_chat_turn_records_viewport_dimensions(mock_conn, mock_embed, mock_retrieve, mock_openai, mock_build):
+    cur = _mock_conn_published(mock_conn)
+    mock_openai.return_value = ("An answer.", [])
+
+    resp = client.post(
+        f"/ask/{SLUG}",
+        json={"question": "How do I win?", "viewport_width": 390, "viewport_height": 844},
+    )
+    assert resp.status_code == 200
+
+    insert_call = cur.execute.call_args_list[-1]
+    sql, params = insert_call[0]
+    assert "INSERT INTO chat_turns" in sql
+    assert params[-2] == 390  # viewport_width
+    assert params[-1] == 844  # viewport_height
+
+
+# ── 13c. Chat turn recorded with omitted viewport dimensions defaults to null ──
+
+@patch("routers.ask._build_citation")
+@patch("routers.ask._call_openai")
+@patch("routers.ask._retrieve_chunks", return_value=SAMPLE_CHUNKS)
+@patch("routers.ask._embed_query", return_value=[0.1] * 1536)
+@patch("routers.ask.get_connection")
+def test_chat_turn_records_null_viewport_when_omitted(mock_conn, mock_embed, mock_retrieve, mock_openai, mock_build):
+    cur = _mock_conn_published(mock_conn)
+    mock_openai.return_value = ("An answer.", [])
+
+    resp = client.post(f"/ask/{SLUG}", json={"question": "How do I win?"})
+    assert resp.status_code == 200
+
+    insert_call = cur.execute.call_args_list[-1]
+    _, params = insert_call[0]
+    assert params[-2] is None  # viewport_width
+    assert params[-1] is None  # viewport_height
+
+
 # ── 14. Rate a turn up ─────────────────────────────────────────────────────────
 
 @patch("routers.ask.get_connection")
