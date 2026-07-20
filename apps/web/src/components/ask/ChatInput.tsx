@@ -36,7 +36,7 @@ export default function ChatInput({ onSubmit, disabled }: Props) {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Ask a question about the rulebook…"
-        disabled={disabled}
+        readOnly={disabled}
         rows={2}
       />
       <button
