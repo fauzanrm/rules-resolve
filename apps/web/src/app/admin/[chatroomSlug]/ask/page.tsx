@@ -191,6 +191,7 @@ export default function AskPage() {
             pageCount={doc!.page_count}
             highlight={activeHighlight}
             displayWidth={mobilePdfWidth}
+            enablePinchZoom
           />
         </PdfBottomSheet>
         <ThumbsDownFeedbackModal

@@ -28,6 +28,9 @@ interface Props {
   pageCount: number;
   highlight: HighlightTarget | null;
   displayWidth?: number;
+  // Two-finger pinch-to-zoom is opt-in: only the mobile bottom-sheet viewer
+  // wants it, not the desktop split-panel instance.
+  enablePinchZoom?: boolean;
 }
 
 interface Dims {
@@ -35,18 +38,12 @@ interface Dims {
   height: number;
 }
 
-// Clamps a pan offset so the scaled page never leaves a gap inside the viewport;
-// centers the page on that axis when it's smaller than the viewport.
-function clampAxis(offset: number, scaledSize: number, viewportSize: number): number {
-  if (scaledSize <= viewportSize) return (viewportSize - scaledSize) / 2;
-  return Math.min(0, Math.max(viewportSize - scaledSize, offset));
-}
-
 const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
-  { getPageImageUrl, pageCount, highlight, displayWidth = DISPLAY_WIDTH },
+  { getPageImageUrl, pageCount, highlight, displayWidth = DISPLAY_WIDTH, enablePinchZoom = false },
   ref
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const pageElRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const [pageDims, setPageDims] = useState<Map<number, Dims>>(new Map());
@@ -55,12 +52,16 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
 
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [focusPage, setFocusPage] = useState<number | null>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(
-    null
-  );
 
-  const zoomed = zoom > MIN_ZOOM + 0.001 && focusPage !== null;
+  const pinchPointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStateRef = useRef<{
+    startDist: number;
+    startZoom: number;
+    anchorPage: number;
+    anchorPts: { x: number; y: number };
+  } | null>(null);
+
+  const zoomed = zoom > MIN_ZOOM + 0.001;
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const focusPageRef = useRef(focusPage);
@@ -68,12 +69,11 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const highlightRef = useRef(highlight);
   highlightRef.current = highlight;
 
-  // The pixel width a given page is currently rendered at: zoomed width for
-  // the focused page, base fit-width for everything else (normal-mode list).
-  function widthForPage(page: number): number {
-    return zoomRef.current > MIN_ZOOM + 0.001 && focusPageRef.current === page
-      ? displayWidth * zoomRef.current
-      : displayWidth;
+  // When zoomed, every page (not just the one a citation targeted) renders at
+  // the zoomed width, so scrolling the container pans through the whole
+  // document at that zoom level instead of being locked to a single page.
+  function widthForPage(): number {
+    return zoomRef.current > MIN_ZOOM + 0.001 ? displayWidth * zoomRef.current : displayWidth;
   }
 
   // Paints (or clears) the highlight rectangles for one page's canvas. Called
@@ -88,7 +88,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     const h = highlightRef.current;
     if (!h || h.page !== page || h.words.length === 0) return;
 
-    const scale = widthForPage(page) / (natWidth / RENDER_SCALE);
+    const scale = widthForPage() / (natWidth / RENDER_SCALE);
     ctx.fillStyle = "rgba(255, 220, 0, 0.4)";
     ctx.strokeStyle = "rgba(200, 160, 0, 0.7)";
     ctx.lineWidth = 1;
@@ -166,38 +166,50 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   function resetZoom(andScrollTo?: number) {
     setZoom(MIN_ZOOM);
     setFocusPage(null);
-    setPan({ x: 0, y: 0 });
+    if (containerRef.current) containerRef.current.scrollLeft = 0;
     if (andScrollTo != null) {
       requestAnimationFrame(() => scrollToPage(andScrollTo));
     }
   }
 
-  async function enterZoom(
+  // Sets the zoom level and scrolls the container so that `anchorPts` (a
+  // point in PDF-points space on `page`) ends up under `screenAnchor`
+  // (container-relative px; defaults to the container's center). Used for
+  // the zoom toolbar, citation jumps, and continuous pinch updates alike.
+  async function applyZoom(
     page: number,
     targetZoom: number,
-    centerPts?: { x: number; y: number }
+    anchorPts?: { x: number; y: number },
+    screenAnchor?: { x: number; y: number }
   ) {
     const dims = await loadDims(page);
     const pdfWidth = dims.width / RENDER_SCALE;
     const pdfHeight = dims.height / RENDER_SCALE;
     const scaleAtZoom1 = displayWidth / pdfWidth;
-    const displayHeightAtZoom1 = pdfHeight * scaleAtZoom1;
-
-    const vw = rootRef.current?.clientWidth ?? displayWidth;
-    const vh = rootRef.current?.clientHeight ?? displayHeightAtZoom1;
-
+    const pts = anchorPts ?? { x: pdfWidth / 2, y: pdfHeight / 2 };
     const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, targetZoom));
-    const scaledW = displayWidth * z;
-    const scaledH = displayHeightAtZoom1 * z;
-
-    const centerPxX = centerPts ? centerPts.x * scaleAtZoom1 * z : scaledW / 2;
-    const centerPxY = centerPts ? centerPts.y * scaleAtZoom1 * z : scaledH / 2;
 
     setFocusPage(page);
     setZoom(z);
-    setPan({
-      x: clampAxis(vw / 2 - centerPxX, scaledW, vw),
-      y: clampAxis(vh / 2 - centerPxY, scaledH, vh),
+
+    requestAnimationFrame(() => {
+      const container = containerRef.current;
+      const pageEl = pageElRefs.current.get(page);
+      if (!container || !pageEl) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const pageRect = pageEl.getBoundingClientRect();
+      const anchorPxX = pts.x * scaleAtZoom1 * z;
+      const anchorPxY = pts.y * scaleAtZoom1 * z;
+      const targetX = screenAnchor?.x ?? containerRect.width / 2;
+      const targetY = screenAnchor?.y ?? containerRect.height / 2;
+      const pageLeftInContent = pageRect.left - containerRect.left + container.scrollLeft;
+      const pageTopInContent = pageRect.top - containerRect.top + container.scrollTop;
+
+      container.scrollTo({
+        left: pageLeftInContent + anchorPxX - targetX,
+        top: pageTopInContent + anchorPxY - targetY,
+      });
     });
   }
 
@@ -219,16 +231,16 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         const vw = rootRef.current?.clientWidth ?? displayWidth;
         const desiredZoom =
           bboxWidthPx > 0 ? (CITATION_TARGET_WIDTH_RATIO * vw) / bboxWidthPx : MIN_ZOOM;
-        enterZoom(page, desiredZoom, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
+        applyZoom(page, desiredZoom, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 });
       });
     },
   }));
 
   function handleZoomIn() {
     if (!zoomed) {
-      enterZoom(getCurrentPage(), INITIAL_ZOOM);
+      applyZoom(getCurrentPage(), INITIAL_ZOOM);
     } else if (focusPage != null) {
-      enterZoom(focusPage, zoom * ZOOM_STEP);
+      applyZoom(focusPage, zoom * ZOOM_STEP);
     }
   }
 
@@ -238,7 +250,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     if (next <= MIN_ZOOM + 0.001) {
       resetZoom(focusPage);
     } else {
-      enterZoom(focusPage, next);
+      applyZoom(focusPage, next);
     }
   }
 
@@ -246,36 +258,77 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
     if (focusPage != null) resetZoom(focusPage);
   }
 
-  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (!zoomed) return;
-    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: pan.x, originY: pan.y };
-    e.currentTarget.setPointerCapture(e.pointerId);
+  // Finds which page element a viewport point falls over — used to figure out
+  // which page a pinch gesture should anchor/zoom around.
+  function findPageAtPoint(clientX: number, clientY: number): number | null {
+    for (const [page, el] of pageElRefs.current) {
+      const rect = el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        return page;
+      }
+    }
+    return null;
   }
 
-  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!dragRef.current || focusPage == null) return;
-    const dims = pageDims.get(focusPage);
-    if (!dims) return;
-
+  // Converts a viewport point into a { page, pts } pair, where pts is in the
+  // same PDF-points coordinate space as citation word quads.
+  function screenToPdfPts(clientX: number, clientY: number): { page: number; pts: { x: number; y: number } } | null {
+    const page = findPageAtPoint(clientX, clientY) ?? getCurrentPage();
+    const el = pageElRefs.current.get(page);
+    const dims = pageDimsRef.current.get(page);
+    if (!el || !dims) return null;
+    const rect = el.getBoundingClientRect();
     const pdfWidth = dims.width / RENDER_SCALE;
-    const pdfHeight = dims.height / RENDER_SCALE;
-    const scaleAtZoom1 = displayWidth / pdfWidth;
-    const scaledW = displayWidth * zoom;
-    const scaledH = pdfHeight * scaleAtZoom1 * zoom;
-
-    const vw = rootRef.current?.clientWidth ?? displayWidth;
-    const vh = rootRef.current?.clientHeight ?? scaledH;
-
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-    setPan({
-      x: clampAxis(dragRef.current.originX + dx, scaledW, vw),
-      y: clampAxis(dragRef.current.originY + dy, scaledH, vh),
-    });
+    const scale = rect.width / pdfWidth;
+    if (scale <= 0) return null;
+    return { page, pts: { x: (clientX - rect.left) / scale, y: (clientY - rect.top) / scale } };
   }
 
-  function handlePointerUp() {
-    dragRef.current = null;
+  function pinchMidpoint(pts: { x: number; y: number }[]) {
+    return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+  }
+
+  // Single-finger panning is handled natively by the container's own
+  // scrolling, so these only need to track two simultaneous touch pointers
+  // for pinch-to-zoom.
+  function handlePinchPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!enablePinchZoom || e.pointerType !== "touch") return;
+    pinchPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinchPointers.current.size !== 2) return;
+
+    const pts = Array.from(pinchPointers.current.values());
+    const mid = pinchMidpoint(pts);
+    const anchor = screenToPdfPts(mid.x, mid.y);
+    if (!anchor) return;
+    pinchStateRef.current = {
+      startDist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y),
+      startZoom: zoomRef.current,
+      anchorPage: anchor.page,
+      anchorPts: anchor.pts,
+    };
+  }
+
+  function handlePinchPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!pinchPointers.current.has(e.pointerId)) return;
+    pinchPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinchPointers.current.size !== 2 || !pinchStateRef.current) return;
+
+    const pts = Array.from(pinchPointers.current.values());
+    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (dist <= 0) return;
+    const mid = pinchMidpoint(pts);
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    const screenAnchor = containerRect
+      ? { x: mid.x - containerRect.left, y: mid.y - containerRect.top }
+      : undefined;
+
+    const { startDist, startZoom, anchorPage, anchorPts } = pinchStateRef.current;
+    applyZoom(anchorPage, startZoom * (dist / startDist), anchorPts, screenAnchor);
+  }
+
+  function handlePinchPointerEnd(e: React.PointerEvent<HTMLDivElement>) {
+    pinchPointers.current.delete(e.pointerId);
+    if (pinchPointers.current.size < 2) pinchStateRef.current = null;
   }
 
   // Re-paint highlights whenever highlight state, page dims, zoom, or focus changes.
@@ -303,7 +356,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
       // Canvas pixel dimensions match the currently rendered display size
       const pdfWidth = img.naturalWidth / RENDER_SCALE;
       const pdfHeight = img.naturalHeight / RENDER_SCALE;
-      const widthPx = widthForPage(page);
+      const widthPx = widthForPage();
       const displayScale = widthPx / pdfWidth;
       canvas.width = widthPx;
       canvas.height = pdfHeight * displayScale;
@@ -362,26 +415,20 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   }
 
   const pages = Array.from({ length: pageCount }, (_, i) => i + 1);
+  const pageWidthPx = widthForPage();
 
   return (
     <div className="pdf-viewer-root" ref={rootRef}>
-      {zoomed && focusPage != null ? (
-        <div
-          className="pdf-viewer-zoom-viewport"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-        >
-          <div className="pdf-viewer-zoom-page" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
-            {renderPageContent(focusPage, displayWidth * zoom)}
-          </div>
-        </div>
-      ) : (
-        <div className="pdf-viewer-container">
-          {pages.map((page) => renderPageContent(page, displayWidth))}
-        </div>
-      )}
+      <div
+        className={`pdf-viewer-container${zoomed ? " pdf-viewer-container--zoomed" : ""}`}
+        ref={containerRef}
+        onPointerDown={enablePinchZoom ? handlePinchPointerDown : undefined}
+        onPointerMove={enablePinchZoom ? handlePinchPointerMove : undefined}
+        onPointerUp={enablePinchZoom ? handlePinchPointerEnd : undefined}
+        onPointerCancel={enablePinchZoom ? handlePinchPointerEnd : undefined}
+      >
+        {pages.map((page) => renderPageContent(page, pageWidthPx))}
+      </div>
 
       <div className="pdf-viewer-toolbar">
         <button

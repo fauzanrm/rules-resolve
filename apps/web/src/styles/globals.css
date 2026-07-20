@@ -2112,7 +2112,7 @@ input[type="file"] {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 88vh;
+  height: 79vh;
   background: #f9fafb;
   border-radius: 14px 14px 0 0;
   box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.2);
@@ -2183,23 +2183,18 @@ input[type="file"] {
   flex-shrink: 0;
 }
 
-.pdf-viewer-zoom-viewport {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  touch-action: none;
+/* When zoomed, pages render wider than the viewport, so the container also
+   scrolls horizontally; touch-action allows two-axis panning while still
+   blocking the browser's own pinch-zoom so our pinch handling owns it. */
+.pdf-viewer-container--zoomed {
+  align-items: flex-start;
+  overflow-x: auto;
+  touch-action: pan-x pan-y;
   cursor: grab;
-  background: #f3f4f6;
 }
 
-.pdf-viewer-zoom-viewport:active {
+.pdf-viewer-container--zoomed:active {
   cursor: grabbing;
-}
-
-.pdf-viewer-zoom-page {
-  position: absolute;
-  top: 0;
-  left: 0;
 }
 
 .pdf-viewer-toolbar {
