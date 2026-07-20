@@ -327,6 +327,7 @@ body {
   justify-content: space-between;
   padding: 0 1.5rem;
   height: 56px;
+  transform: translateZ(0);
 }
 
 .navbar-brand {
@@ -727,6 +728,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -1939,6 +1941,7 @@ input[type="file"] {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -2036,6 +2039,7 @@ input[type="file"] {
   padding: 0 0.5rem;
   height: 52px;
   flex-shrink: 0;
+  transform: translateZ(0);
 }
 
 .ask-mobile-back-btn {
@@ -2457,7 +2461,7 @@ input[type="file"] {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+  font-size: 16px;
   font-family: inherit;
   line-height: 1.4;
   outline: none;
