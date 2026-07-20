@@ -3,6 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { clearSession, getSession, Role } from "@/lib/auth";
+import ReportIssueButton from "@/components/ReportIssueButton";
 
 interface NavbarProps {
   onBack?: () => void;
@@ -38,6 +39,7 @@ export default function Navbar({ onBack, titleSlot }: NavbarProps = {}) {
       <div className="navbar-right">
         {role === "admin" && <span className="admin-badge">Admin</span>}
         {role === "user" && <span className="user-badge">User</span>}
+        <ReportIssueButton />
         <button className="logout-btn" onClick={handleLogout}>
           Log out
         </button>
