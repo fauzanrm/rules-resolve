@@ -2472,7 +2472,7 @@ input[type="file"] {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 
-.chat-input-textarea:disabled {
+.chat-input-textarea:read-only {
   background: #f9fafb;
   color: #9ca3af;
 }
