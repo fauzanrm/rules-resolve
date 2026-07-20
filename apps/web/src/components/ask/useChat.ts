@@ -95,12 +95,12 @@ export function useChat(chatroomSlug: string) {
     setFeedbackTurnId(null);
   }
 
-  async function submitFeedback(category: FeedbackCategory | null, details: string) {
+  async function submitFeedback(categories: FeedbackCategory[], details: string) {
     if (feedbackTurnId === null) return;
     const turnId = feedbackTurnId;
     setFeedbackTurnId(null);
     try {
-      await patch(`/ask/turns/${turnId}/feedback`, { category, details: details || null });
+      await patch(`/ask/turns/${turnId}/feedback`, { categories, details: details || null });
     } catch {
       // Feedback is best-effort; the rating itself was already recorded.
     }

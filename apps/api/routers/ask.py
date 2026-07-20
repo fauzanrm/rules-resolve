@@ -77,17 +77,18 @@ class RatingRequest(BaseModel):
 
 
 FEEDBACK_CATEGORIES = {
-    "incorrect_answer",
-    "missing_information",
-    "wrong_citation",
-    "unclear_response",
-    "misunderstood_question",
+    "totally_incorrect",
+    "incomplete_answer",
+    "did_not_know_answer",
+    "citation_problems",
+    "ui_glitch",
+    "pdf_viewer_issue",
     "other",
 }
 
 
 class FeedbackRequest(BaseModel):
-    category: Optional[str] = None
+    categories: list[str] = []
     details: Optional[str] = None
 
 
@@ -463,23 +464,24 @@ def rate_turn(turn_id: int, body: RatingRequest):
 
 @router.patch("/turns/{turn_id}/feedback")
 def submit_feedback(turn_id: int, body: FeedbackRequest):
-    if body.category is not None and body.category not in FEEDBACK_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Invalid feedback category")
+    invalid = [c for c in body.categories if c not in FEEDBACK_CATEGORIES]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid feedback category: {invalid[0]}")
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 UPDATE chat_turns
-                SET feedback_category = %s, feedback_text = %s
+                SET feedback_categories = %s, feedback_text = %s
                 WHERE id = %s
                 RETURNING id
                 """,
-                (body.category, body.details, turn_id),
+                (Json(body.categories), body.details, turn_id),
             )
             row = cur.fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="Chat turn not found")
 
-    return {"turn_id": turn_id, "category": body.category, "details": body.details}
+    return {"turn_id": turn_id, "categories": body.categories, "details": body.details}

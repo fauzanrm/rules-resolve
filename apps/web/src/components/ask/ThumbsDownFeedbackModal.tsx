@@ -6,7 +6,7 @@ import { FEEDBACK_CATEGORIES, FeedbackCategory } from "./askTypes";
 interface ThumbsDownFeedbackModalProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (category: FeedbackCategory | null, details: string) => void;
+  onSubmit: (categories: FeedbackCategory[], details: string) => void;
 }
 
 export default function ThumbsDownFeedbackModal({
@@ -14,20 +14,26 @@ export default function ThumbsDownFeedbackModal({
   onClose,
   onSubmit,
 }: ThumbsDownFeedbackModalProps) {
-  const [category, setCategory] = useState<FeedbackCategory | null>(null);
+  const [categories, setCategories] = useState<FeedbackCategory[]>([]);
   const [details, setDetails] = useState("");
 
   if (!open) return null;
 
   function handleClose() {
-    setCategory(null);
+    setCategories([]);
     setDetails("");
     onClose();
   }
 
+  function toggleCategory(value: FeedbackCategory) {
+    setCategories((prev) =>
+      prev.includes(value) ? prev.filter((c) => c !== value) : [...prev, value]
+    );
+  }
+
   function handleSubmit() {
-    onSubmit(category, details.trim());
-    setCategory(null);
+    onSubmit(categories, details.trim());
+    setCategories([]);
     setDetails("");
   }
 
@@ -49,11 +55,11 @@ export default function ThumbsDownFeedbackModal({
             {FEEDBACK_CATEGORIES.map((c) => (
               <label key={c.value} className="feedback-category-option">
                 <input
-                  type="radio"
+                  type="checkbox"
                   name="feedback-category"
                   value={c.value}
-                  checked={category === c.value}
-                  onChange={() => setCategory(c.value)}
+                  checked={categories.includes(c.value)}
+                  onChange={() => toggleCategory(c.value)}
                 />
                 {c.label}
               </label>

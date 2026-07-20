@@ -21,19 +21,21 @@ export interface Citation {
 export type Rating = "up" | "down";
 
 export type FeedbackCategory =
-  | "incorrect_answer"
-  | "missing_information"
-  | "wrong_citation"
-  | "unclear_response"
-  | "misunderstood_question"
+  | "totally_incorrect"
+  | "incomplete_answer"
+  | "did_not_know_answer"
+  | "citation_problems"
+  | "ui_glitch"
+  | "pdf_viewer_issue"
   | "other";
 
 export const FEEDBACK_CATEGORIES: { value: FeedbackCategory; label: string }[] = [
-  { value: "incorrect_answer", label: "Incorrect rules answer" },
-  { value: "missing_information", label: "Missing or incomplete information" },
-  { value: "wrong_citation", label: "Cited wrong rule/section" },
-  { value: "unclear_response", label: "Confusing or unclear response" },
-  { value: "misunderstood_question", label: "Off-topic / misunderstood question" },
+  { value: "totally_incorrect", label: "Totally incorrect answer" },
+  { value: "incomplete_answer", label: "Incomplete answer" },
+  { value: "did_not_know_answer", label: "Did not know the answer" },
+  { value: "citation_problems", label: "Citations were wrong/had problems" },
+  { value: "ui_glitch", label: "UI glitched or did not work as expected" },
+  { value: "pdf_viewer_issue", label: "Something was wrong with the PDF viewer" },
   { value: "other", label: "Other" },
 ];
 
